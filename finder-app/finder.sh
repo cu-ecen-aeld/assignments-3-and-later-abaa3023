@@ -29,6 +29,11 @@ fi
 grep -rich $1 -e $2 > string_count_per_file.txt
 
 total_file_count=$( wc -l < string_count_per_file.txt )
-total_string_count=$( paste -sd+ string_count_per_file.txt | bc)
+total_string_count=0
+while read -r line
+do
+	(( total_string_count += line ))
+done
+# total_string_count=$( paste -sd+ string_count_per_file.txt | bc)
 
 echo "The number of files are $total_file_count and the number of matching lines are $total_string_count"
