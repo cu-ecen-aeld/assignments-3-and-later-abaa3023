@@ -27,11 +27,13 @@
 #include <stdlib.h> 
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 
 
 // Entry point of application
-int main(int argc, char* argv[])
+void main(int argc, char* argv[])
 {
 	// Logging timestamp
 	char cur_time[128];
