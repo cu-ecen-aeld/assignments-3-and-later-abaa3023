@@ -216,7 +216,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     {
     	if (dup2(fd, 1) < 0) 
     	{
-    		syslog(LOG_ERR, "Error while duplicating");
+    		syslog(LOG_ERR, "Error while executing dup2");
     		return false;
     	}
     	close(fd);
