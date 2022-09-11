@@ -12,6 +12,7 @@ BUSYBOX_VERSION=1_33_1
 FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
+SYSROOT=$( ${CROSS_COMPILE}gcc -print-sysroot )
 
 if [ $# -lt 1 ]
 then
@@ -35,16 +36,15 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # TODO: Add your kernel build steps here
-    # qemu-system-arm -m 256M -nographic -M versatilepb -kernel zImage -append "console=ttyAMA0 rdinit=/bin/sh" -dtb versatile-pb.dtb -initrd initramfs.cpio.gz
-    sudo make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
-    sudo make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
-    sudo make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
-    sudo make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
-    sudo make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
+    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    sudo env "PATH=$PATH" make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
+    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi 
 
 echo "Adding the Image in outdir"
-
+cp ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ${OUTDIR}
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
 if [ -d "${OUTDIR}/rootfs" ]
@@ -54,17 +54,14 @@ then
 fi
 
 # TODO: Create necessary base directories
-mkdir -p ${OUTDIR}/rootfs
-cd "$OUTDIR/rootfs"
-mkdir bin dev etc home lib proc sbin sys tmp usr var
+mkdir ${OUTDIR}/rootfs
+cd ${OUTDIR}/rootfs
+mkdir bin dev etc home lib lib64 proc sbin sys tmp usr var
 mkdir usr/bin usr/lib usr/sbin
 mkdir -p var/log
-
-cd "$OUTDIR"
-sudo chown -R root:root *
-
-
-cd "$OUTDIR"
+cd ${OUTDIR}/rootfs/home
+mkdir conf
+cd ${OUTDIR}
 if [ ! -d "${OUTDIR}/busybox" ]
 then
 git clone git://busybox.net/busybox.git
@@ -78,38 +75,30 @@ else
 fi
 
 # TODO: Make and install busybox
-sudo make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
-
+sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} CONFIG_PREFIX=${OUTDIR}/rootfs install
 echo "Library dependencies"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
-cd "$OUTDIR/rootfs"
-cp -a $SYSROOT/lib/ld-linux-armhf.so.3 lib
-cp -a $SYSROOT/lib/ld-2.22.so lib
-cp -a $SYSROOT/lib/libc.so.6 lib
-cp -a $SYSROOT/lib/libc-2.22.so lib
-cp -a $SYSROOT/lib/libm.so.6 lib
-cp -a $SYSROOT/lib/libm-2.22.so lib
+cd ${OUTDIR}/rootfs
 # TODO: Make device nodes
 sudo mknod -m 666 dev/null c 1 3
 sudo mknod -m 600 dev/console c 5 1
-#sudo make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} INSTALL_MOD_PATH=${OUTDIR}/rootfs modules_install
+cd ${OUTDIR}/linux-stable
 # TODO: Clean and build the writer utility
-cd "~/assignment-1-abaa3023/finder-app"
-make CROSS_COMPILE=${CROSS_COMPILE} clean
-make CROSS_COMPILE=${CROSS_COMPILE} all
+cd ${FINDER_APP_DIR}
+make clean
+make CROSS_COMPILE=${CROSS_COMPILE}
 # TODO: Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp ~/assignment-1-abaa3023/finder-app/finder.sh ${OUTDIR}/rootfs
-cp ~/assignment-1-abaa3023/finder-app/finder-test.sh ${OUTDIR}/rootfs
+cp ${FINDER_APP_DIR}/writer ${FINDER_APP_DIR}/finder-test.sh ${FINDER_APP_DIR}/finder.sh ${FINDER_APP_DIR}/autorun-qemu.sh ${OUTDIR}/rootfs/home
+cp ${FINDER_APP_DIR}/conf/username.txt ${OUTDIR}/rootfs/home/conf
+chmod +x ${OUTDIR}/rootfs/home/finder.sh
 # TODO: Chown the root directory
-cd "$OUTDIR"
+cd ${OUTDIR}/rootfs
 sudo chown -R root:root *
 # TODO: Create initramfs.cpio.gz
-cd "$OUTDIR/rootfs"
 find . | cpio -H newc -ov --owner root:root > ../initramfs.cpio
 cd ..
 gzip initramfs.cpio
-mkimage -A ${CROSS_COMPILE} -O linux -T ramdisk -d iniramfs.cpio.gz uRamdisk

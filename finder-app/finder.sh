@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # Check for number of arguments. Minimum number of required argumnets is 2
 
