@@ -5,6 +5,8 @@
 set -e
 set -u
 
+sudo env "PATH=$PATH"
+
 OUTDIR=/tmp/aeld
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.1.10
@@ -33,7 +35,6 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     cd linux-stable
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
-    #git show
     wget https://github.com/torvalds/linux/commit/e33a814e772cdc36436c8c188d8c42d019fda639.diff
     git apply e33a814e772cdc36436c8c188d8c42d019fda639.diff
 
@@ -66,7 +67,7 @@ mkdir bin dev etc home lib lib64 proc sbin sys temp usr var
 mkdir -p usr/bin usr/lib usr/sbin
 mkdir -p var/log
 
-sudo env "PATH=$PATH"
+# sudo env "PATH=$PATH"
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -91,16 +92,14 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
-# Copy libraries
-#${CROSS_COMPILE}-gcc -print-sysroot
-export PATH2=$(${CROSS_COMPILE}gcc -print-sysroot)
-echo $PATH2
-ls
+export SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
+#echo $PATH2
+#ls
 
-cp $PATH2/lib/ld-linux-aarch64.so.1 lib
-cp $PATH2/lib64/libm.so.6 lib64
-cp $PATH2/lib64/libresolv.so.2 lib64
-cp $PATH2/lib64/libc.so.6 lib64
+cp $SYSROOT/lib/ld-linux-aarch64.so.1 lib
+cp $SYSROOT/lib64/libm.so.6 lib64
+cp $SYSROOT/lib64/libresolv.so.2 lib64
+cp $SYSROOT/lib64/libc.so.6 lib64
 
 
 # TODO: Make device nodes
@@ -114,16 +113,9 @@ make clean
 make CROSS_COMPILE=${CROSS_COMPILE}
 
 # TODO: Copy the finder related scripts and executables to the /home directory
-# on the target rootfs
-# cp finder.sh ${OUTDIR}/rootfs/home
-# cp finder-test.sh ${OUTDIR}/rootfs/home
-# cp writer.c ${OUTDIR}/rootfs/home
-# cp writer.sh ${OUTDIR}/rootfs/home
-# cp Makefile ${OUTDIR}/rootfs/home
 
 cp ./writer ${OUTDIR}/rootfs/home
 cp ./*.sh ${OUTDIR}/rootfs/home
-#cp Makefile ${OUTDIR}/rootfs/home
 cp -r ./conf/ ${OUTDIR}/rootfs/home
 
 # TODO: Chown the root directory
