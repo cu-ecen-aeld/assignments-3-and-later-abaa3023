@@ -36,11 +36,11 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # TODO: Add your kernel build steps here
-    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
-    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
-    sudo env "PATH=$PATH" make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
-    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
-    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi 
 
 echo "Adding the Image in outdir"
@@ -68,8 +68,8 @@ git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox 
-    make distclean
-    make defconfig
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} distclean
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
 else
     cd busybox
 fi
@@ -81,6 +81,12 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
 ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
+cd ${OUTDIR}/rootfs
+cp ${SYSROOT}/lib/ld-linux-aarch64.so.1 lib
+cp ${SYSROOT}/lib64/libm.so.6 lib64
+cp ${SYSROOT}/lib64/libresolv.so.2 lib64
+cp ${SYSROOT}/lib64/libc.so.6 lib64
+
 cd ${OUTDIR}/rootfs
 # TODO: Make device nodes
 sudo mknod -m 666 dev/null c 1 3
