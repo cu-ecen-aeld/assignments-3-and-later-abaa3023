@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script outline to install and build kernel.
-# Author: Siddhant Jajooo.
+# Author: Siddhant Jajoo.
 
 set -e
 set -u
@@ -35,8 +35,8 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     cd linux-stable
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
-    wget https://github.com/torvalds/linux/commit/e33a814e772cdc36436c8c188d8c42d019fda639.diff
-    git apply e33a814e772cdc36436c8c188d8c42d019fda639.diff
+    #wget https://github.com/torvalds/linux/commit/e33a814e772cdc36436c8c188d8c42d019fda639.diff
+    #git apply e33a814e772cdc36436c8c188d8c42d019fda639.diff
 
     echo "Kernel Build Steps"
     # TODO: Add your kernel build steps here
@@ -67,8 +67,6 @@ mkdir bin dev etc home lib lib64 proc sbin sys temp usr var
 mkdir -p usr/bin usr/lib usr/sbin
 mkdir -p var/log
 
-# sudo env "PATH=$PATH"
-
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
 then
@@ -93,8 +91,6 @@ ${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
 
 # TODO: Add library dependencies to rootfs
 export SYSROOT=$(${CROSS_COMPILE}gcc -print-sysroot)
-#echo $PATH2
-#ls
 
 cp $SYSROOT/lib/ld-linux-aarch64.so.1 lib
 cp $SYSROOT/lib64/libm.so.6 lib64
