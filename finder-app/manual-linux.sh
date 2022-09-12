@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script outline to install and build kernel.
-# Author: Siddhant Jajooo.
+# Author: Siddhant Jajoo.
 
 set -e
 set -u
