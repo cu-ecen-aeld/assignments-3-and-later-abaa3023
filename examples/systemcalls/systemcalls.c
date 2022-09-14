@@ -1,4 +1,22 @@
+/*
+ * Author: Abijith
+ *
+ */
+
+// Header files
 #include "systemcalls.h"
+#include "errno.h"
+#include "stdlib.h"
+#include "syslog.h"
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <dirent.h>
+
+
 
 /**
  * @param cmd the command to execute with system()
@@ -16,7 +34,22 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
+    int ret = system(cmd);
+    // check if system command was executed properly or not
+    if(ret == -1)
+    {
+    	syslog(LOG_ERR, "Child process could not be created or status cannot be retrieved. Return value = -1, errno = %d", errno);
+    	return false;
+    }
+    
+    // return 127 if a shell could not be executed in the child process
+    if(ret == 127)
+    {
+    	syslog(LOG_ERR, "Shell could not be executed in the child process then return value is as though the child shell terminated by calling exit(1), errno = %d", errno);
+    	return false;
+    }
+    
+    syslog(LOG_DEBUG, "system command successfully executed");	
     return true;
 }
 
@@ -39,15 +72,48 @@ bool do_exec(int count, ...)
     va_list args;
     va_start(args, count);
     char * command[count+1];
+    char * rest_of_args[count];
     int i;
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
     }
+    
+    // checks if directory exists or not
+    DIR* dir = opendir(command[0]);
+    if(dir)
+    {
+    	closedir(dir);
+    }
+    else if(errno == ENOENT)
+    {
+    	return false;
+    }
+    
+    // add situation if number of arguments is 3
+    if(count == 3)
+    {
+    	DIR* dir1 = opendir(command[2]);
+    	if(dir1)
+    	{
+    		closedir(dir1);
+    	}
+    	else if(errno == ENOENT)
+    	{
+    		return false;
+    	}
+    }
+    // assign full path variable
+    char *full_path = command[0];
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
     command[count] = command[count];
+    
+    for(i=0; i<(count+1); i++)
+    {
+        rest_of_args[i]=command[i+1];
+    }
 
 /*
  * TODO:
@@ -58,7 +124,24 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-
+    
+    int status;
+    pid_t pid;
+    pid=fork();
+    if(pid==-1)
+    	return false;
+    else if(pid == 0)
+    {
+    	if((execv(full_path, rest_of_args))!=-1)
+    		return true;
+    	else
+    		return false;
+    }
+    
+    if(waitpid(pid,&status,0)==-1)
+    	return false;
+    else if(WIFEXITED(status))
+    	return true;	
     va_end(args);
 
     return true;
@@ -79,6 +162,31 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     {
         command[i] = va_arg(args, char *);
     }
+    // check if directory exists
+    DIR* dir = opendir(command[0]);
+    if(dir)
+    {
+    	closedir(dir);
+    }
+    else if(errno == ENOENT)
+    {
+    	return false;
+    }
+    // add condition for number of arguments as 3
+    if(count == 3)
+    {
+    	DIR* dir1 = opendir(command[2]);
+    	if(dir1)
+    	{
+    		closedir(dir1);
+    	}
+    	else if(errno == ENOENT)
+    	{
+    		return false;
+    	}
+    }
+    // full path is assigned as variable
+    char *full_path = command[0];
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
@@ -93,6 +201,35 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
+    int status;
+    pid_t pid;
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    if (fd < 0)
+    {
+    	syslog(LOG_ERR, "Error while opening file");
+    	return false;
+    }
+    pid=fork();
+    if(pid==-1)
+    	return false;
+    else if(pid == 0)
+    {
+    	if (dup2(fd, 1) < 0) 
+    	{
+    		syslog(LOG_ERR, "Error while executing dup2");
+    		return false;
+    	}
+    	close(fd);
+    	if((execv(full_path, command))!=-1)
+    		return true;
+    	else
+    		return false;
+    }
+    
+    if(waitpid(pid,&status,0)==-1)
+    	return false;
+    else if(WIFEXITED(status))
+    	return true;	
     va_end(args);
 
     return true;
