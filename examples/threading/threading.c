@@ -16,10 +16,34 @@ void* threadfunc(void* thread_param)
     // hint: use a cast like the one below to obtain thread arguments from your paramete
     
     struct thread_data* thread_func_args = (struct thread_data *) thread_param;
+
+    int rc;
     
+    rc=nanosleep(&thread_func_args->wait_to_obtain_ms, NULL);
+    if(rc == 0)
+    	DEBUG_LOG("\nnanosleep successful\n");
+     else
+     	ERROR_LOG("\nnanosleep failed\n");
+
+    rc = pthread_mutex_lock(thread_func_args->mutex);
+
+    if(rc != 0)
+    {
+        thread_func_args->thread_complete_success = false;
+        return thread_param;
+    }
+
+    rc=nanosleep(&thread_func_args->wait_to_release_ms, NULL);
+        
+    rc = pthread_mutex_unlock(thread_func_args->mutex);
+    if(rc != 0)
+    {
+        thread_func_args->thread_complete_success = false;
+        return thread_param;
+    }
+
     thread_func_args->thread_complete_success = true;
-    
-    return thread_func_args;
+    return thread_param;
 }
 
 
@@ -34,57 +58,31 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
      * See implementation details in threading.h file comment block
      */
      
-     int rc;
-     
      struct thread_data *t_data = (struct thread_data *)malloc(sizeof(struct thread_data));
      
      if(t_data == NULL)
+     {
      	ERROR_LOG("\nRunning out of memory\n");
+     	return false;
+     }
      else
      	DEBUG_LOG("\nMalloc successful\n");
      
+     t_data->wait_to_obtain_ms.tv_sec = 0;
+     t_data->wait_to_obtain_ms.tv_nsec = (wait_to_obtain_ms*1000000);
+     t_data->wait_to_release_ms.tv_sec = 0;
+     t_data->wait_to_release_ms.tv_nsec = (wait_to_obtain_ms*1000000);
+     t_data->mutex = mutex;
+     
+     int rc;
      rc = pthread_create(&t_data->thread, NULL, threadfunc, t_data);
      if(rc == 0)
      {
      	DEBUG_LOG("\nCreate successful\n");
-     	usleep(wait_to_obtain_ms*1000);
      }
      else
      	ERROR_LOG("\nPthread create failed\n");
      
-     rc = pthread_mutex_init(mutex, NULL);
-     if(rc!=0)
-     	ERROR_LOG("\nMutex initialization failed\n");
-     else
-     	DEBUG_LOG("\nMutex initialization successful\n");
-     
-     rc = pthread_mutex_lock(mutex);
-     if(rc == 0)
-     {
-     	DEBUG_LOG("\nPthread Mutex lock sucessful\n");
-     	usleep(wait_to_release_ms*1000);
-     }
-     else
-     	ERROR_LOG("\nPthread Mutex Lock failed\n");
-     
-     rc = pthread_mutex_unlock(mutex);
-     if(rc!=0)
-     	ERROR_LOG("\nPthread Mutex Unlock failed\n");
-     else
-     	DEBUG_LOG("\nPthread Mutex Unlock successful\n");
-     
-     if(t_data->thread_complete_success)
-     {
-     	syslog(LOG_DEBUG, "Success");  
-     	DEBUG_LOG("\nThread process complete\n");
-     	pthread_join(t_data->thread, NULL);
-     	return true;
-     }
-     else
-     {
-     	syslog(LOG_DEBUG, "Error");  
-     	ERROR_LOG("\nThread process not complete\n");
-     	pthread_join(t_data->thread, NULL);
-     	return false;
-     }
+     *thread = t_data->thread;
+     return true;
 }
