@@ -1,6 +1,7 @@
 #!/bin/sh
 # Tester script for assignment 1 and assignment 2
 # Author: Siddhant Jajoo
+# seeked help from Guruprashanth Krishnakumar
 
 set -e
 set -u
@@ -43,23 +44,22 @@ fi
 
 #echo "Removing the old writer utility and compiling as a native application"
 #make clean
-# make
+#make
 
 for i in $( seq 1 $NUMFILES)
 do
 	writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$( finder.sh "$WRITEDIR" "$WRITESTR")
+OUTPUTSTRING=$( finder.sh "$WRITEDIR" "$WRITESTR" )
 
 if [ -d "/tmp" ];
 then
 	echo $OUTPUTSTRING > "/tmp/assignment4-result.txt"
 else
 	mkdir "/tmp"
-	echo $OUTPUTSTRING > "/tmp/assignment-4-result.txt"
+	echo $OUTPUTSTRING > "/tmp/assignment4-result.txt"
 fi
-
 set +e
 echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
 if [ $? -eq 0 ]; then
@@ -69,3 +69,4 @@ else
 	echo "failed: expected  ${MATCHSTR} in ${OUTPUTSTRING} but instead found"
 	exit 1
 fi
+
