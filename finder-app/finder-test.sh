@@ -1,6 +1,6 @@
 #!/bin/sh
 # Tester script for assignment 1 and assignment 2
-# Author: Siddhant Jajoo
+# Author: Siddhant Jajooo
 # seeked help from Guruprashanth Krishnakumar
 
 set -e
