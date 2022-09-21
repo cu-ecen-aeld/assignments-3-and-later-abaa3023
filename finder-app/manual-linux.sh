@@ -38,12 +38,12 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
 
     echo "Kernel Build Steps"
     # TODO: Add your kernel build steps here
-    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
-    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
-    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} Image
-    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
-    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
-    make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
+    sudo env "PATH=$PATH" make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    sudo env "PATH=$PATH" make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    sudo env "PATH=$PATH" make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} Image
+    sudo env "PATH=$PATH" make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
+    sudo env "PATH=$PATH" make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    sudo env "PATH=$PATH" make -j4 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
 fi
 
 echo "Adding the Image in outdir"
