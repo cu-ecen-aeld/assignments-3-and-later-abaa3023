@@ -42,6 +42,8 @@
  * Global variables
  */
 int filefd, serverfd;
+pid_t pid;
+bool d_arg = false;
 
 
 
@@ -84,7 +86,6 @@ int main(int argc, char **argv)
 	struct sockaddr_in s, c;
 	int status, recv_bytes, acceptfd, max_buf_size, saved_bytes, send_bytes = 0, read_bytes = 0;
     	socklen_t addr_size;
-    	bool d_arg = false;
 	
 	
 	// signals
@@ -258,7 +259,7 @@ int main(int argc, char **argv)
 	// seeked help from Dhiraj for daemon process part
     	if(d_arg)
 	{
-		pid_t pid = fork();
+		pid = fork();
 		if(pid == -1)
 		{
 			syslog(LOG_ERR, "fork error = %d\n",errno);
@@ -267,9 +268,7 @@ int main(int argc, char **argv)
 		}
 		else if(pid != 0)
 		{
-			syslog(LOG_ERR, "fork error = %d\n",errno);
-			fprintf(stderr, "fork error: %d\n", errno);
-			return -1;
+			exit(0);
 		}
 		
 		status = setsid();
