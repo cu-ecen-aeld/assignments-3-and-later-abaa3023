@@ -237,8 +237,8 @@ static int write_data(int fd, char* string,int write_len)
             {
                 continue;
             }
-            //printf("Write len %d\n",write_len);
-            perror("Error Write");
+            syslog(LOG_ERR, "write error = %d\n",errno);
+	    fprintf(stderr, "write error: %d\n", errno);
             return -1;
         }
         write_len -= ret;
@@ -264,8 +264,8 @@ static int echo_file_socket(int fd, int acceptfd)
             {
                 continue;
             }
-            //printf("Read Len %d\n",read_len);
-            perror("Read");
+            syslog(LOG_ERR, "read error = %d\n",errno);
+	    fprintf(stderr, "read error: %d\n", errno);
             return -1;
         }
         int num_bytes_to_send = ret;
@@ -273,10 +273,11 @@ static int echo_file_socket(int fd, int acceptfd)
         int str_index = 0;
         while(num_bytes_to_send>0)
         {
-            num_bytes_sent = send(acceptfd,&write_str[str_index],num_bytes_to_send,0);
+            num_bytes_sent = send(acceptfd,&write_str[str_index],num_bytes_to_send,SEND_FLAGS);
             if(num_bytes_sent == -1)
             {
-                perror("Send");
+		syslog(LOG_ERR, "send error = %d\n",errno);
+		fprintf(stderr, "send error: %d\n", errno);
                 return -1;
             }
             num_bytes_to_send -= num_bytes_sent;
@@ -549,7 +550,8 @@ int main(int argc,char **argv)
 	status = timer_create(CLOCK_REALTIME, NULL, &s_data.timer);
 	if(status == -1)
 	{
-		perror("Create timer");
+		syslog(LOG_ERR, "timer create error = %d\n",errno);
+		fprintf(stderr, "timer create error: %d\n", errno);
 		return -1;
 	}
 	s_data.itime.it_interval.tv_sec = 10;
@@ -559,7 +561,8 @@ int main(int argc,char **argv)
 	status = timer_settime(s_data.timer, 0, &s_data.itime,NULL);
 	if(status == -1)
 	{
-		perror("Set timer");
+		syslog(LOG_ERR, "timer_settime error = %d\n",errno);
+		fprintf(stderr, "timer_settime error: %d\n", errno);
 		return -1;
 	}
 	
