@@ -11,7 +11,7 @@ then
 fi
 
 
-# split file directory path into array
+# split file directory path into arra
 IFS='/' read -ra dir_array <<< $1
 	
 #save current size
