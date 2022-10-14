@@ -1,6 +1,7 @@
 #!/bin/sh
 # Tester script for assignment 1 and assignment 2
-# Author: Siddhant Jajoo
+# Author: Siddhant Jajooo
+# seeked help from Guruprashanth Krishnakumar
 
 set -e
 set -u
@@ -8,7 +9,7 @@ set -u
 NUMFILES=10
 WRITESTR=AELD_IS_FUN
 WRITEDIR=/tmp/aeld-data
-username=$(cat conf/username.txt)
+username=$(cat /etc/finder-app/conf/username.txt)
 
 if [ $# -lt 2 ]
 then
@@ -41,17 +42,24 @@ else
 	exit 1
 fi
 
-echo "Removing the old writer utility and compiling as a native application"
-make clean
-# make
+#echo "Removing the old writer utility and compiling as a native application"
+#make clean
+#make
 
 for i in $( seq 1 $NUMFILES)
 do
-	./writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
+	writer "$WRITEDIR/${username}$i.txt" "$WRITESTR"
 done
 
-OUTPUTSTRING=$(./finder.sh "$WRITEDIR" "$WRITESTR")
+OUTPUTSTRING=$( finder.sh "$WRITEDIR" "$WRITESTR" )
 
+if [ -d "/tmp" ];
+then
+	echo $OUTPUTSTRING > "/tmp/assignment4-result.txt"
+else
+	mkdir "/tmp"
+	echo $OUTPUTSTRING > "/tmp/assignment4-result.txt"
+fi
 set +e
 echo ${OUTPUTSTRING} | grep "${MATCHSTR}"
 if [ $? -eq 0 ]; then
@@ -61,4 +69,5 @@ else
 	echo "failed: expected  ${MATCHSTR} in ${OUTPUTSTRING} but instead found"
 	exit 1
 fi
+
 
