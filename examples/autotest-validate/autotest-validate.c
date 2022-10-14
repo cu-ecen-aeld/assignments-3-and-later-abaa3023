@@ -1,5 +1,5 @@
 /**
-* A simple file to validate your automated test setup for AESD
+* A simple file to validate your automated test setup for AESD.
 */
 
 #include "autotest-validate.h"
