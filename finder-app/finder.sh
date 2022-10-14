@@ -4,7 +4,7 @@
 
 if [ $# != 2 ]
 then
-	echo 'Kindly enter 2 arguments.'
+	echo 'Kindly enter 2 arguments'
 	echo 'First argument is file directory.'
 	echo 'Second argument is text string to be searched within the respective files in the mentioned file directory'
 	exit 1
