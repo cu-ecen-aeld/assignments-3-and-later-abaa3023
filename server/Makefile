@@ -1,28 +1,32 @@
-INCLUDE_DIRS = 
+INCLUDES ?= 
 LIB_DIRS = 
-CROSS_COMPILE=
-CC=$(CROSS_COMPILE)gcc
+# CROSS_COMPILE variable initially set to nothing. Will be over-written if value is passed in the command-line.
+CROSS_COMPILE =
+CC ?= $(CROSS_COMPILE)gcc
+TARGET ?= aesdsocket
 
-CDEFS=
-CFLAGS= -O0 -g $(INCLUDE_DIRS) $(CDEFS)
-LIBS= 
+# Compile at O0 by default
+CFLAGS ?= -O0 -g -Wall -Werror 
+LDFLAGS ?= -pthread -lrt
 
-HFILES= 
-CFILES= aesdsocket.c
+HFILES =queue.h
+CFILES = $(TARGET).c
 
-SRCS= ${HFILES} ${CFILES}
-OBJS= ${CFILES:.c=.o}
+SRCS = ${HFILES} ${CFILES}
+OBJS = ${CFILES:.c=.o}
 
-all:	aesdsocket
+all:	$(TARGET)
 
+# Remove all .o files and the writer executable
 clean:
 	-rm -f *.o *.d
-	-rm -f aesdsocket
+	-rm -f $(TARGET)
 
-writer: aesdsocket.o
-	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $@.o
+# native build if no args are passed, build for the specified target in case args are passed.
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $^ -o $@ $(INCLUDES) $(LDFLAGS)
 
 depend:
 
 .c.o:
-	$(CC) $(CFLAGS) -c $<
+	$(CC) $(CFLAGS) $(INCLUDES) -c $<

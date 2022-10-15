@@ -1,170 +1,320 @@
-// reference: Beej's guide to network programming
-// Tutorials's point
-// seeked help from fellow classmates regarding the use of statemachines and respective enums
 /*
- * Header files
- */
+*   HEADER FILES
+*/
+#include <sys/types.h>
+#include <sys/socket.h>
+#include "queue.h"
+#include <pthread.h>
+#include <netdb.h>
+#include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <netinet/in.h>
-#include <netdb.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <syslog.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdbool.h>
-#include "queue.h"
-#include <sys/time.h>
 #include <time.h>
-#include <pthread.h>
-
-
-
 /*
- * Macros
- */
-#define PORT "9000" 
-#define BUFFER_STD_SIZE 256
-#define MAX_CONNECTIONS_ON_INCOMING_QUEUE 10
-#define SEND_FLAGS 0
-#define RECV_FLAGS 0
-#define FILE_PATH "/var/tmp/aesdsocketdata"
-#define MAX_BUF_SIZE 1000
-#define SOCKET_DOMAIN AF_INET
-#define SOCKET_TYPE SOCK_STREAM
-#define SOCKET_PROTOCOL 0
-#define MAX_ACCEPT 10
-
-
-
+*   MACROS
+*/
+#define BUF_SIZE_UNIT           (1024)
+#define LOG_FILE                ("/var/tmp/aesdsocketdata")
+#define CIRCULAR_BUF_DEPTH      (8)
 /*
- * Global variables
- */
+*   GLOBALS
+*/
 typedef enum
 {
-    accept_t,
-    join_t,
-    recv_t,
-    send_t
-}thread_type_t;
+    Accept_Connections,
+    Join_threads,
+}main_thread_states_t;
 
+typedef enum
+{
+    Receive_From_Socket,
+    Parse_data,
+}worker_threads_states_t;
 
-
-struct node_s
+struct worker_thread_s
 {
     pthread_t thread_id;
     bool thread_completed;
-    thread_type_t thread_type;
-    int fd;
+    worker_threads_states_t curr_state;
+    int socket_file_descriptor;
     char ip_addr[INET6_ADDRSTRLEN];
-    TAILQ_ENTRY(node_s) nodes;
+    TAILQ_ENTRY(worker_thread_s) entries;
 };
 
-typedef struct node_s node_t;
-typedef TAILQ_HEAD(head_s, node_s) head_t;
+typedef struct worker_thread_s worker_thread_t;
+typedef TAILQ_HEAD(head_s, worker_thread_s) head_t;
 typedef struct
 {
-    bool trigger;
+    bool signal_caught;
     bool free_address_info;
+    bool free_socket_descriptor;
     bool disarm_alarm;
     struct addrinfo *host_addr_info;
-    int serverfd;
-    bool free_serverfd;
+    int socket_descriptor;
     pthread_mutex_t mutex;
     int connection_count;
-    timer_t timer;
+    timer_t timer_1;
     struct itimerspec itime;
-}s_data_t;
+}socket_state_t;
 
-s_data_t s_data;
-
-typedef struct
-{
-    char time[100];
-}time_str_s;
+socket_state_t socket_state;
 
 typedef struct
 {
-    bool q_empty;
-    bool q_full;
-    uint32_t tail;
-    uint32_t head;
-    time_str_s t_str[MAX_ACCEPT];
-}queue_s;
+    char time_string[100];
+}circular_buf_data_t;
 
-queue_s q;
+typedef struct
+{
+    uint32_t wptr;
+    uint32_t rptr;
+    bool queue_empty;
+    bool queue_full;
+    circular_buf_data_t time_buf[CIRCULAR_BUF_DEPTH];
+}circular_buf_metadata_t;
+
+circular_buf_metadata_t circular_buf;
+
+/*
+*   STATIC FUNCTION PROTOTYPES
+*/
+
+/*
+*   Checks the state of booleans in the socket_state structure and performs neccesarry cleanups like 
+*   closing fds, freeing memory etc.,
+*
+*   Args:
+*       None
+*   Params:
+*       None
+*/
+static void perform_cleanup();
+
+
+/*
+*   Initializes circular buffer used for storing timestamps
+*
+*   Args:
+*       None
+*   Params:
+*       None
+*/
+static void initialize_circular_buf();
+
+/*
+*   Create an interval timer and arm it to expire every 10s.
+*
+*   Args:
+*       None
+*   Params:
+*       None
+*/
+static int create_and_arm_timer();
+
+
+/*
+*   Setup signal handler for the signal number passed 
+*
+*   Args:
+*       signo - signal number for which handler needs to be set up for 
+*   Params:
+*       0 if successful, -1 if failed 
+*/
+static int setup_signal(int signo);
+
+
+/*
+*   Disarm the timer and close it.
+*
+*   Args:
+*       none
+*   Params:
+*       none 
+*/
+static void disarm_and_destroy_timer();
+
+/*
+*   Signal handler for SIGINT and SIGTERM. If any open connection is on-going on the socket,
+*   it sets a flag that a signal was caught. Otherwise, performs neccessarry cleanup and exits.
+*
+*   Args:
+*       None
+*   Params:
+*       None
+*/
+static void sighandler();
+
+/*
+*   Signal handler for SIGINT and SIGTERM. Enqueue timestamp into circular buffer.
+*
+*   Args:
+*       None
+*   Params:
+*       None
+*/
+static void alarmhandler();
+/*
+*   Returns the IP address present in the socket address data structure passed.
+*
+*   Args:
+*       sockaddr    -   socket address data structure
+*   Params:
+*       IPv4 or IPv6 address contained in the socket address data structure
+*/
+static void *get_in_addr(struct sockaddr *sa);
+
+/*
+*   Dumps the content passed to a file.
+*
+*   Args:
+*       fd    -   handle to the file to write into
+*       string  -   Data to write to file
+*       write_len   -   Number of bytes contained in string.
+*   Params:
+*       Success or failure
+*/
+static int dump_content(int fd, char* string,int write_len);
+
+/*
+*   Reads from a file and echoes it back across the socket.
+*
+*   Args:
+*       fd    -   handle to the file to read
+*       read_len   -   Number of bytes contained in file.
+*   Params:
+*       Success or failure
+*/
+static int echo_file_socket(int fd, int socket_fd);
+
+/*
+*   Initializes the socket state structure to a known initial state.
+*
+*   Args:
+*       None
+*   Params:
+*       None
+*/
+static void initialize_socket_state();
+
+
+/*
+*   Enqueues timestamp into circular buffer.
+*
+*   Args:
+*       data - data to be enqueued
+*   Params:
+*       success/failure
+*/
+static int enqueue_data_into_circ_buf(char* data);
+
+
+
+/*
+*   Dequeues timestamp from circular buffer.
+*
+*   Args:
+*       data - buffer to store dequeued timestamp
+*   Params:
+*       success/failure
+*/
+static int dequeue_data_from_circ_buf(char* buf); 
+
+
+/*
+*   Thread-per-connection. Reads off a socket descriptor until recv
+*   returns 0 and dumps when \n is encountered.
+*
+*   Args:
+*       data - buffer to store dequeued timestamp
+*   Params:
+*       success/failure
+*/
+static void* server_thread(void* thread_param);
+
+/*
+*   Return the next pointer of read/write pointer passed while handling wraparound
+*
+*   Args:
+*       ptr - pointer for which nextptr needs to be calculated
+*   Params:
+*       nextptr
+*/
+static uint32_t nextPtr(uint32_t ptr);
+
+/*
+*   FUNCTION DEFINITIONS
+*/
 
 static uint32_t nextPtr(uint32_t ptr) {
 
-  return ((ptr+1)&(MAX_ACCEPT - 1));
+  // Student edit:
+  // Create this function
+  return ((ptr+1)&(CIRCULAR_BUF_DEPTH - 1));
 
-}
+} // nextPtr()
 
-static int dequeue(char* buf)
+/*
+*    Note on Circular buffer: 
+*                The circular buffer is not reentrant. The enqueue and dequeue functions do not 
+*                modify the same variables and hence calls to enqueue from within dequeue will not
+*                cause race conditions. However, a call to enqueue from within enqueue will cause over-writes (similarly for dequeue it might cause skips)
+*                This circular buffer implementation works as long as there is one producer and one consumer (as is the case with this program, alarmhandler
+*                is the producer and the whatever writes to the file is the consumer)
+*/
+static int enqueue_data_into_circ_buf(char* data)
 {
-  if(q.q_empty)
+  if(circular_buf.queue_full)
   {
     return -1;
   }
-  strncpy(buf,q.t_str[q.head].time,80);
-  q.head = nextPtr(q.head);
-  q.q_full = false;
-  if(q.tail == q.head)
+  strncpy(circular_buf.time_buf[circular_buf.wptr].time_string,data,80);
+  circular_buf.wptr = nextPtr(circular_buf.wptr);
+  circular_buf.queue_empty = false;
+  if(circular_buf.wptr == circular_buf.rptr)
   {
-    q.q_empty = true;
+    circular_buf.queue_full = true;
   }
   return 0;
 }
 
-static void signal_handler()
+static int dequeue_data_from_circ_buf(char* buf)
 {
-    s_data.trigger = true;
+  if(circular_buf.queue_empty)
+  {
+    return -1;
+  }
+  strncpy(buf,circular_buf.time_buf[circular_buf.rptr].time_string,80);
+  circular_buf.rptr = nextPtr(circular_buf.rptr);
+  circular_buf.queue_full = false;
+  if(circular_buf.wptr == circular_buf.rptr)
+  {
+    circular_buf.queue_empty = true;
+  }
+  return 0;
 }
 
-static void alarm_handler()
-{
-    //https://www.tutorialspoint.com/c_standard_ibrary/c_function_strftime.htm	
-    time_t rawtime;
-    struct tm *info;
-    char time_val[40];
-    char buffer[80];
-    time( &rawtime );
-
-    info = localtime( &rawtime );
-
-    strftime(time_val,40,"%Y/%m/%d - %H:%M:%S", info);
-    sprintf(buffer,"timestamp: %s \n",time_val);
-    if(q.q_full)
-    {
-	exit(-1);
-    }
-    strncpy(q.t_str[q.tail].time,buffer,80);
-    q.tail = nextPtr(q.tail);
-    q.q_empty = false;
-    if(q.tail == q.head)
-    {
-	q.q_full = true;
-    }
-}
-
-static int register_signal(int signum)
+static int setup_signal(int signo)
 {
     struct sigaction action;
-    if(signum == SIGINT || signum == SIGTERM)
+    if(signo == SIGINT || signo == SIGTERM)
     {
-        action.sa_handler = signal_handler;
+        action.sa_handler = sighandler;
     }
-    else if(signum == SIGALRM)
+    else if(signo == SIGALRM)
     {
-        action.sa_handler = alarm_handler;
+        action.sa_handler = alarmhandler;
     }
     action.sa_flags = 0;
     sigset_t empty;
@@ -174,7 +324,7 @@ static int register_signal(int signum)
         return -1; 
     }
     action.sa_mask = empty;
-    if(sigaction(signum, &action, NULL) == -1)
+    if(sigaction(signo, &action, NULL) == -1)
     {
         syslog(LOG_ERR, "Could not set up handle for signal: %s.", strerror(errno));
         return -1;         
@@ -182,36 +332,106 @@ static int register_signal(int signum)
     return 0;
 }
 
-static void init_queue()
+static void initialize_circular_buf()
 {
-    q.q_full = false;
-    q.q_empty = true;
-    q.tail = 0;
-    q.head = 0;
+    circular_buf.wptr = 0;
+    circular_buf.rptr = 0;
+    circular_buf.queue_full = false;
+    circular_buf.queue_empty = true;
 }
 
-
-
-static void init_socket()
+static int create_and_arm_timer()
 {
-
-    s_data.free_address_info = false;
-    s_data.free_serverfd = false;
-    s_data.trigger = false;
-    s_data.disarm_alarm = false;
-    s_data.host_addr_info = NULL;
-    pthread_mutex_init(&s_data.mutex, NULL);
-    s_data.connection_count = 0;
+    int flags = 0;
+    int status = 0;
+    status = timer_create(CLOCK_REALTIME, NULL, &socket_state.timer_1);
+    if(status == -1)
+    {
+        syslog(LOG_ERR,"Create timer: %s",strerror(errno));
+        return -1;
+    }
+    socket_state.itime.it_interval.tv_sec = 10;
+    socket_state.itime.it_interval.tv_nsec = 0;
+    socket_state.itime.it_value.tv_sec = 10;
+    socket_state.itime.it_value.tv_nsec = 0;
+    status = timer_settime(socket_state.timer_1, flags, &socket_state.itime,NULL);
+    if(status == -1)
+    {
+        syslog(LOG_ERR,"Set timer %s",strerror(errno));
+        return -1;
+    }
+    return 0;
 }
 
+static void disarm_and_destroy_timer()
+{
+    int flags = 0;
+    socket_state.itime.it_interval.tv_sec = 0;
+    socket_state.itime.it_interval.tv_nsec = 0;
+    socket_state.itime.it_value.tv_sec = 0;
+    socket_state.itime.it_value.tv_nsec = 0;
+    timer_settime(socket_state.timer_1, flags, &socket_state.itime,NULL);
+    timer_delete(socket_state.timer_1);
+}
+static void initialize_socket_state()
+{
+
+    socket_state.free_address_info = false;
+    socket_state.free_socket_descriptor = false;
+    socket_state.signal_caught = false;
+    socket_state.disarm_alarm = false;
+    socket_state.host_addr_info = NULL;
+    pthread_mutex_init(&socket_state.mutex, NULL);
+    socket_state.connection_count = 0;
+}
+static void perform_cleanup()
+{
+    if(socket_state.host_addr_info && socket_state.free_address_info)
+    {
+        freeaddrinfo(socket_state.host_addr_info);
+    }
+    if(socket_state.free_address_info)
+    {
+        close(socket_state.socket_descriptor);
+    }
+    if(socket_state.disarm_alarm)
+    {
+        disarm_and_destroy_timer();
+    }
+    pthread_mutex_destroy(&socket_state.mutex);
+    //Disarm Alarm
+    closelog();
+}
 static void shutdown_function()
 {
     printf("\nCaught Signal. Exiting\n");
+    perform_cleanup();
     printf("Deleting file\n");
     unlink("/var/tmp/aesdsocketdata");
     exit(1);
 }
 
+static void sighandler()
+{
+    socket_state.signal_caught = true;
+}
+
+/*
+*   Functions time() and localtime_r are reentrant and hence are safe to call from signal handler.
+*   strftime() has not been called since it is not reentrant.
+*   Limitations of circular buffer have been documented above.
+*/
+static void alarmhandler()
+{
+    time_t rawtime;
+    struct tm info;
+    char buffer[80];
+    time( &rawtime );
+    localtime_r( &rawtime,&info );
+    sprintf(buffer,"timestamp: %d/%02d/%02d - %02d:%02d:%02d\n",(info.tm_year + 1900),(info.tm_mon + 1),info.tm_mday,info.tm_hour,info.tm_min,info.tm_sec);
+    enqueue_data_into_circ_buf(buffer);
+    
+}
 static void *get_in_addr(struct sockaddr *sa)
 {
     if (sa->sa_family == AF_INET) {
@@ -221,7 +441,7 @@ static void *get_in_addr(struct sockaddr *sa)
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-static int write_data(int fd, char* string,int write_len)
+static int dump_content(int fd, char* string,int write_len)
 {
     ssize_t ret; 
     while(write_len!=0)
@@ -237,8 +457,8 @@ static int write_data(int fd, char* string,int write_len)
             {
                 continue;
             }
-            syslog(LOG_ERR, "write error = %d\n",errno);
-	    fprintf(stderr, "write error: %d\n", errno);
+            //printf("Write len %d\n",write_len);
+            syslog(LOG_ERR,"Write: %s",strerror(errno));
             return -1;
         }
         write_len -= ret;
@@ -246,10 +466,10 @@ static int write_data(int fd, char* string,int write_len)
     }
     return 0;
 }
-static int echo_file_socket(int fd, int acceptfd)
+static int echo_file_socket(int fd, int socket_fd)
 {
     ssize_t ret; 
-    char write_str[BUFFER_STD_SIZE];
+    char write_str[BUF_SIZE_UNIT];
     while(1)
     {
         memset(write_str,0,sizeof(write_str));
@@ -264,8 +484,8 @@ static int echo_file_socket(int fd, int acceptfd)
             {
                 continue;
             }
-            syslog(LOG_ERR, "read error = %d\n",errno);
-	    fprintf(stderr, "read error: %d\n", errno);
+            //printf("Read Len %d\n",read_len);
+            syslog(LOG_ERR,"Read: %s",strerror(errno));
             return -1;
         }
         int num_bytes_to_send = ret;
@@ -273,11 +493,10 @@ static int echo_file_socket(int fd, int acceptfd)
         int str_index = 0;
         while(num_bytes_to_send>0)
         {
-            num_bytes_sent = send(acceptfd,&write_str[str_index],num_bytes_to_send,SEND_FLAGS);
+            num_bytes_sent = send(socket_fd,&write_str[str_index],num_bytes_to_send,0);
             if(num_bytes_sent == -1)
             {
-		syslog(LOG_ERR, "send error = %d\n",errno);
-		fprintf(stderr, "send error: %d\n", errno);
+                syslog(LOG_ERR,"Send: %s",strerror(errno));
                 return -1;
             }
             num_bytes_to_send -= num_bytes_sent;
@@ -287,106 +506,133 @@ static int echo_file_socket(int fd, int acceptfd)
     return 0;
 }
 
-// seeked help from Guru post getting stuck
-// added goto statements
-static void* threadfunc(void* thread_param)
+static void* server_thread(void* thread_param)
 {
-    char *buffer;
-    int file_fd;
-    int recv_bytes = 0,start_ptr = 0,read_bytes=0;
-    int buffer_length=0,buffer_capacity=0;
-    int status=0;
-    node_t *thread_params = (node_t *)thread_param;
+    worker_thread_t *thread_params = (worker_thread_t *)thread_param;
+    int file_descriptor,num_bytes_read = 0,start_ptr = 0,num_bytes_to_read=0,buf_len=0,buf_cap=0,status=0;
+    char *ptr,*buf;
     while(1)
     {
-        switch(thread_params->thread_type)
+        switch(thread_params->curr_state)
         {
-            case recv_t:
-                if(buffer_capacity == buffer_length)
+            case Receive_From_Socket:
+                if(buf_cap == buf_len)
                 {
-                    if(buffer_capacity == 0)
+                    if(buf_cap == 0)
                     {
-                        buffer = malloc(BUFFER_STD_SIZE);
-                        if(buffer == NULL)
+                        buf = malloc(BUF_SIZE_UNIT);
+                        if(!buf)
                         {
+                            printf("Insufficient memory. Exiting\n");
+                            //socket_file_descriptor needs to be freed.
+                            //completion boolean has to be set
                             goto free_socket_fd;
                         }
                     }
                     else
                     {
-                        int new_len = buffer_capacity + BUFFER_STD_SIZE; 
-                        char *new_buffer;   
-                        new_buffer = realloc(buffer,new_len);     
-                        if(!new_buffer)
+                        int new_len = buf_cap + BUF_SIZE_UNIT; 
+                        char *new_buf;   
+                        new_buf = realloc(buf,new_len);     
+                        if(!new_buf)
                         {
-                            free(buffer);
+                            printf("Insufficient memory. Exiting\n");
+                            free(buf);
+                            //buf has to be freed
+                            //socket_file_descriptor needs to be freed.
+                            //completion boolean has to be set
                             goto free_mem;
                         }
-                        buffer = new_buffer;           
+                        buf = new_buf;           
                     }
-                    buffer_capacity += BUFFER_STD_SIZE;
+                    buf_cap += BUF_SIZE_UNIT;
                 }
-                recv_bytes = 0;
-                recv_bytes = recv(thread_params->fd,(buffer+buffer_length),(buffer_capacity - buffer_length),RECV_FLAGS);
-                if(recv_bytes == -1)
+                num_bytes_read = 0;
+                num_bytes_read = recv(thread_params->socket_file_descriptor,(buf+buf_len),(buf_cap - buf_len),0);
+                if(num_bytes_read == -1)
                 {
                     syslog(LOG_ERR,"Recv: %s",strerror(errno));
+                    //buf has to be freed
+                    //socket_file_descriptor needs to be freed.
+                    //completion boolean has to be set
                     goto free_mem;
                 }
-                else if(recv_bytes>0)
+                else if(num_bytes_read>0)
                 {
-                    thread_params->thread_type = send_t;
+                    thread_params->curr_state = Parse_data;
                 }
-                else if(recv_bytes == 0)
+                else if(num_bytes_read == 0)
                 {
+                    //buf has to be freed
+                    //socket_file_descriptor needs to be freed.
+                    //completion boolean has to be set
+
                     goto free_mem;
                 }
                 break;
-            case send_t:
-                read_bytes = ((buffer_length - start_ptr) + recv_bytes);
-                int temp_read_var = read_bytes;
-                char *ptr;
-                for(ptr = &buffer[start_ptr];temp_read_var>0;ptr++,temp_read_var--)
+            case Parse_data:
+                num_bytes_to_read = ((buf_len - start_ptr) + num_bytes_read);
+                //printf("Bytes read %d num_bytes_to_read %d\n",num_bytes_read,num_bytes_to_read);
+                int temp_read_var = num_bytes_to_read;
+                for(ptr = &buf[start_ptr];temp_read_var>0;ptr++,temp_read_var--)
                 {
                     if(*ptr == '\n')
                     {
                         temp_read_var--;
-                        status = pthread_mutex_lock(&s_data.mutex);
+                        status = pthread_mutex_lock(&socket_state.mutex);
                         if(status != 0)
                         {
                             syslog(LOG_ERR,"Mutex Lock: %s",strerror(errno));
+                            //buf has to be freed
+                            //socket_file_descriptor needs to be freed.
+                            //completion boolean has to be set
                             goto free_mem;
                         }
-                        file_fd = open(FILE_PATH,O_RDWR|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
-                        if(file_fd == -1)
+                        file_descriptor = open(LOG_FILE,O_RDWR|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
+                        if(file_descriptor == -1)
                         {
                             syslog(LOG_ERR,"Open: %s",strerror(errno));
                             goto unlock_mutex;
                         }
-
-                        int newline_data = (read_bytes - temp_read_var);
-                        if(write_data(file_fd,&buffer[start_ptr],newline_data)==-1)
+                        //printf("Temp var read %d\n",temp_read_var);
+                        int bytes_written_until_newline = (num_bytes_to_read - temp_read_var);
+                        //printf("Total buffsize %d buf len %d bytes written until newline %d \n",buf_cap,buf_len,bytes_written_until_newline);
+                        if(dump_content(file_descriptor,&buf[start_ptr],bytes_written_until_newline)==-1)
                         {
-                            goto close_filefd;
+                            //file_descriptor needs to be closed
+                            //mutex has to be unlocked
+                            //buf has to be freed
+                            //socket_file_descriptor needs to be freed.
+                            //completion boolean has to be set
+                            //perform cleanup and exit, but this time unlock first
+                            goto close_file_descriptor;
                         }                        
-                        lseek(file_fd, 0, SEEK_SET );
+                        lseek(file_descriptor, 0, SEEK_SET );
+                        //printf("Total Bytes written to file %d\n",total_bytes_written_to_file);
 
-                        if(echo_file_socket(file_fd,thread_params->fd)==-1)
+                        if(echo_file_socket(file_descriptor,thread_params->socket_file_descriptor)==-1)
                         {
-                            goto close_filefd;
+                            //file_descriptor needs to be closed
+                            //mutex has to be unlocked
+                            //buf has to be freed
+                            //socket_file_descriptor needs to be freed.
+                            //completion boolean has to be set
+                            //perform cleanup and exit, but this time unlock first
+                            goto close_file_descriptor;
                         }
-                        char time_str[80];
+                        char time_buf_string[80];
                     
-                        if(dequeue(time_str)==0)
+                        if(dequeue_data_from_circ_buf(time_buf_string)==0)
                         {
-                            if(write_data(file_fd,time_str,strlen(time_str))!=-1)
+                            if(dump_content(file_descriptor,time_buf_string,strlen(time_buf_string))!=-1)
                             {
-                                newline_data += strlen(time_str);
+                                printf("wrote from thread\n");
+                                bytes_written_until_newline += strlen(time_buf_string);
                             }
                         }
-                        start_ptr = newline_data;
-                        close(file_fd);
-                        status = pthread_mutex_unlock(&s_data.mutex);
+                        start_ptr = bytes_written_until_newline;
+                        close(file_descriptor);
+                        status = pthread_mutex_unlock(&socket_state.mutex);
                         if(status != 0)
                         {
                             syslog(LOG_ERR,"Mutex Unlock: %s",strerror(errno));
@@ -395,274 +641,290 @@ static void* threadfunc(void* thread_param)
                         break;
                     }
                 }
-                buffer_length += recv_bytes;
-                thread_params->thread_type = recv_t;
+                buf_len += num_bytes_read;
+                thread_params->curr_state = Receive_From_Socket;
                 break;
-            
-            case accept_t:
-            	break;
-            case join_t:
-            	break;
         }
     }
-    close_filefd: close(file_fd);
-    unlock_mutex: pthread_mutex_unlock(&s_data.mutex);
-    free_mem: free(buffer);
-    free_socket_fd: close(thread_params->fd);
+    close_file_descriptor: close(file_descriptor);
+    unlock_mutex: pthread_mutex_unlock(&socket_state.mutex);
+    free_mem: free(buf);
+    free_socket_fd: close(thread_params->socket_file_descriptor);
                     thread_params->thread_completed = true;
                     syslog(LOG_DEBUG,"Closed connection from %s",thread_params->ip_addr);
                     return 0;
 }
 
-
-
+/*
+*   Writing the timestamp back to file is done from the main thread if there are no open connections,
+*   otherwise it is done from the threads itself. This is to avoid skipping timestamps if the 
+*   traffic is busy. 
+*/
 int main(int argc,char **argv)
 {
-	init_socket();
-	init_queue();
-	bool d_arg = false;
-	thread_type_t thread_type;
-	if(argc>1)
-	{
-		if(strcmp(argv[1],"-d") == 0)
-		{
-			d_arg = true;
-		}
-	}
-	int status=0,yes=1;
-	struct addrinfo hints;
-	struct addrinfo *p = NULL;
-	char s[INET6_ADDRSTRLEN];
-	memset(s,0,sizeof(s));
-	struct sockaddr_storage c;
-	socklen_t addr_size = sizeof(c);
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_socktype = SOCKET_TYPE;
-	hints.ai_flags = AI_PASSIVE;
+    initialize_socket_state();
+    initialize_circular_buf();
+    bool run_as_daemon = false;
+    main_thread_states_t main_thread_state;
+    openlog(NULL,0,LOG_USER);
+    int opt;
+    while((opt = getopt(argc, argv,"d")) != -1)
+    {
+        switch(opt)
+        {
+            case 'd':
+                run_as_daemon = true;
+                break;
+        }
 
-    	status = getaddrinfo(NULL, PORT, &hints, &s_data.host_addr_info);
-    	if(status != 0)
-	{
-		syslog(LOG_ERR, "getaddrinfo error = %d\n",errno);
-		fprintf(stderr, "getaddrinfo error: %d\n", errno);
-		return -1;
-	}
-    	s_data.free_address_info = true;
+    }
+    int status=0,yes=1;
+    struct addrinfo hints;
+    struct addrinfo *p = NULL;  // will point to the results
+    char s[INET6_ADDRSTRLEN];
+    memset(s,0,sizeof(s));
+    struct sockaddr_storage client_addr;
+    socklen_t addr_size = sizeof(client_addr);
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
+    hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
+    //TODO: Call freeaddrinfo() once done with servinfo
 
-	for(p = s_data.host_addr_info; p != NULL; p = p->ai_next) 
-	{
-		s_data.serverfd = socket(p->ai_family, p->ai_socktype,p->ai_protocol);
-		if(s_data.serverfd == -1)
-		{
-			syslog(LOG_ERR, "socket error = %d\n",errno);
-			fprintf(stderr, "socket error: %d\n", errno);
-			continue;
-		}
-		s_data.free_serverfd = true;
-		status = setsockopt(s_data.serverfd,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
-		if(status == -1)
-		{
-			syslog(LOG_ERR, "setsockopt error = %d\n",errno);
-			fprintf(stderr, "setsockopt error: %d\n", errno);
-			return -1;
-		}
-		status = bind(s_data.serverfd,p->ai_addr, p->ai_addrlen);
-		if(status == -1)
-		{
-			syslog(LOG_ERR, "bind error = %d\n",errno);
-			fprintf(stderr, "bind error: %d\n", errno);
-			close(s_data.serverfd);
-			continue;
-		}
-		break;
-	}
-	if(p == NULL)
-	{
-		fprintf(stderr, "server error\n");
-		return -1;
-	}
+    /*
+    *   Get info regarding the peer at Port 9000
+    */
+    status = getaddrinfo(NULL, "9000", &hints, &socket_state.host_addr_info);
+    if(status != 0)
+    {
+        syslog(LOG_ERR,"getaddrinfo: %s",strerror(errno));
+        return -1;
+
+    }
+    socket_state.free_address_info = true;
+    /*
+    *   Try to bind to one of the socket descriptors returned by getaddrinfo
+    */
+    for(p = socket_state.host_addr_info; p != NULL; p = p->ai_next) 
+    {
+        socket_state.socket_descriptor = socket(p->ai_family, p->ai_socktype,p->ai_protocol);
+        if(socket_state.socket_descriptor == -1)
+        {
+            syslog(LOG_ERR,"Socket: %s",strerror(errno));
+            continue;
+        }
+        socket_state.free_socket_descriptor = true;
+        status = setsockopt(socket_state.socket_descriptor,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes));
+        if(status == -1)
+        {
+            syslog(LOG_ERR,"Set Socket Options: %s",strerror(errno)); 
+            perform_cleanup();
+            return -1;
+        }
+        status = bind(socket_state.socket_descriptor,p->ai_addr, p->ai_addrlen);
+        if(status == -1)
+        {
+            syslog(LOG_ERR,"Bind: %s",strerror(errno));
+            close(socket_state.socket_descriptor);
+            continue;
+        }
+        break;
+    }
+    if(p == NULL)
+    {
+        syslog(LOG_ERR,"server: failed to bind");
+        fprintf(stderr, "server: failed to bind\n");
+        perform_cleanup();
+        return -1;
+    }
     
     
-    	freeaddrinfo(s_data.host_addr_info);
-    	s_data.free_address_info = false;
+    freeaddrinfo(socket_state.host_addr_info);
+    socket_state.free_address_info = false;
+    /*
+    *   if opt command line was specified, then run this program as a daemon
+    */
+    if(run_as_daemon)
+    {
+        pid_t pid;
+        /* create new process */
+        pid = fork ();
+        if (pid == -1)
+        {
+            syslog(LOG_ERR,"Fork: %s",strerror(errno));
+            perform_cleanup();
+            return -1;
+        }
+        else if (pid != 0)
+        {
+            perform_cleanup();
+            exit (EXIT_SUCCESS);
+        }
+        else
+        {
+            if(setsid()==-1)
+            {
+                syslog(LOG_ERR,"SetSid: %s",strerror(errno));
+                perform_cleanup();
+                return -1;
+            }
+            if(chdir("/")==-1)
+            {
+                syslog(LOG_ERR,"Chdir: %s",strerror(errno));;
+                perform_cleanup();
+                return -1;
+            }
+            /* redirect fd's 0,1,2 to /dev/null */
+            close(STDIN_FILENO);
+            close(STDOUT_FILENO);
+            close(STDERR_FILENO);
+            open ("/dev/null", O_RDWR); /* stdin */
+            dup (0); /* stdout */
+            dup (0); /* stderror */
+        }
+    }
+    int backlog = 10;
+    printf("Listening for connections...\n");
+    status = listen(socket_state.socket_descriptor,backlog);
+    if(status == -1)
+    {
+        syslog(LOG_ERR,"Listen: %s",strerror(errno));
+        perform_cleanup();
+        return -1;
+    }
+    /*
+    *   Setup signal handler
+    */
+    //TODO: Setup Signal Alarm 
+    //Set up the signals handler
 
-	if(d_arg)
-	{
-		pid_t pid;
-		pid = fork();
-		if (pid == -1)
-		{
-		    syslog(LOG_ERR, "fork error = %d\n",errno);
-		    fprintf(stderr, "fork error: %d\n", errno);
-		    return -1;
-		}
-		else if (pid != 0)
-		{
-		    exit(0);
-		}
-		else
-		{
-		    status = setsid();	
-		    if(status==-1)
-		    {
-			syslog(LOG_ERR, "setsid error = %d\n",errno);
-		    	fprintf(stderr, "setsid error: %d\n", errno);
-			return -1;
-		    }
-		    status = chdir("/");
-		    if(status == -1)
-		    {
-			syslog(LOG_ERR, "chdir error = %d\n",errno);
-		    	fprintf(stderr, "chdir error: %d\n", errno);
-			return -1;
-		    }
-		    close(STDIN_FILENO);
-		    close(STDOUT_FILENO);
-		    close(STDERR_FILENO);
-		    open ("/dev/null", O_RDWR);
-		    dup (0);
-		    dup (0);
-		}
-	}
-	status = listen(s_data.serverfd,MAX_CONNECTIONS_ON_INCOMING_QUEUE);
-	if(status == -1)
-	{
-		syslog(LOG_ERR, "listen error = %d\n",errno);
-		fprintf(stderr, "listen error: %d\n", errno);
-		return -1;
-	}
-	status = register_signal(SIGINT);
-	if(status == -1)
-	{
-		return -1;
-	}
-	status = register_signal(SIGTERM);
-	if(status == -1)
-	{
-		return -1;        
-	}
-	status = register_signal(SIGALRM);
-	if(status == -1)
-	{
-		return -1;          
-	}
-
-	status = timer_create(CLOCK_REALTIME, NULL, &s_data.timer);
-	if(status == -1)
-	{
-		syslog(LOG_ERR, "timer create error = %d\n",errno);
-		fprintf(stderr, "timer create error: %d\n", errno);
-		return -1;
-	}
-	s_data.itime.it_interval.tv_sec = 10;
-	s_data.itime.it_interval.tv_nsec = 0;
-	s_data.itime.it_value.tv_sec = 10;
-	s_data.itime.it_value.tv_nsec = 0;
-	status = timer_settime(s_data.timer, 0, &s_data.itime,NULL);
-	if(status == -1)
-	{
-		syslog(LOG_ERR, "timer_settime error = %d\n",errno);
-		fprintf(stderr, "timer_settime error: %d\n", errno);
-		return -1;
-	}
-	
-	s_data.disarm_alarm = true;
-	head_t head;
-	TAILQ_INIT(&head);
-
-	if(s_data.trigger)
-	{
-		thread_type = join_t;
-	}
-	else
-	{
-		thread_type = accept_t;
-	}
     
-    	int acceptfd;
+    if(setup_signal(SIGINT)== -1)
+    {
+        perform_cleanup();
+        return -1;
+    }
+    if(setup_signal(SIGTERM)==-1)
+    {
+        perform_cleanup();
+        return -1;        
+    }
+    if(setup_signal(SIGALRM)==-1)
+    {
+        perform_cleanup();
+        return -1;          
+    }
+    if(create_and_arm_timer()==-1)
+    {
+        perform_cleanup();
+        return -1;    
+    }
+    socket_state.disarm_alarm = true;
+    head_t head;
+    TAILQ_INIT(&head);
+    //Use inside thread
+
+    /*
+    *   Simple statemachine implemented to handle socket reading loop.
+    *
+    *   Accept_Connections -  accept new connections. Open socket file descriptor. If same IP as before, open /var/aesdsocketdata in append mode, else in truncate mode.
+    *   Receive_From_Socket - Read data from socket. If no data received, close connection. Else send it for parsing.
+    *   Parse_Data  -   Parse the data received character by character to check for '\n', if newline found, dump data until that character and echo back across socket. 
+    */
+    if(socket_state.signal_caught)
+    {
+        main_thread_state = Join_threads;
+    }
+    else
+    {
+        main_thread_state = Accept_Connections;
+    }
+    
+    int socket_fd;
     while(1)
     {
-        switch(thread_type)
+        switch(main_thread_state)
         {
-            case accept_t:
+            case Accept_Connections:
                 
-                acceptfd = accept(s_data.serverfd,(struct sockaddr*)&c,&addr_size);
-                if(acceptfd == -1)
+                socket_fd = accept(socket_state.socket_descriptor,(struct sockaddr*)&client_addr,&addr_size);
+                if(socket_fd == -1)
                 {   
-			syslog(LOG_ERR, "accept error = %d\n",errno);
-			fprintf(stderr, "accept error: %d\n", errno);
-			thread_type = join_t;
-			break;
+                    if(errno == EINTR)
+                    {
+                        printf("EINTR\n");
+                        goto next_state;
+                    }
+                    syslog(LOG_ERR,"Accept: %s",strerror(errno));
+                    goto next_state;
                 }                    
-                inet_ntop(c.ss_family, get_in_addr((struct sockaddr *)&c), s, sizeof(s));
-                syslog(LOG_DEBUG,"Accepted connection from %s\n", s);
-                node_t *node = NULL;
-                node = malloc(sizeof(node_t));
-                if(node == NULL)
+                inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof(s));
+                worker_thread_t *node = NULL;
+                node = malloc(sizeof(worker_thread_t));
+                if(!node)
                 {
-			syslog(LOG_ERR, "malloc error = %d\n",errno);
-			fprintf(stderr, "malloc error: %d\n", errno);
-			thread_type = join_t;
-			break;
+                    syslog(LOG_ERR,"Malloc failed");
+                    goto next_state;
                 }
                 node->thread_completed = false;
-                node->thread_type = recv_t;
-                node->fd = acceptfd;
+                node->curr_state = Receive_From_Socket;
+                node->socket_file_descriptor = socket_fd;
                 strcpy(node->ip_addr,s);
-                status = pthread_create(&node->thread_id, (void*)0, threadfunc, node);
+                status = pthread_create(&node->thread_id,
+                             (void*)0,
+                             server_thread,
+                             node);
                 if(status !=0)
                 {
-			free(node);
-			syslog(LOG_ERR, "malloc error = %d\n",errno);
-			fprintf(stderr, "malloc error: %d\n", errno);
-			thread_type = join_t;
-			break;
+                    syslog(LOG_ERR,"Listen: %s",strerror(errno));
+                    free(node);
+                    goto next_state;
                 }   
-                TAILQ_INSERT_TAIL(&head, node, nodes);
-                s_data.connection_count++;
+                TAILQ_INSERT_TAIL(&head, node, entries);
+                socket_state.connection_count++;
                 node = NULL;
-                thread_type = join_t;
-                break;
-               
-            case join_t:
-                if(s_data.connection_count>0)
+                goto next_state;
+                next_state:
+                    main_thread_state = Join_threads;
+                    break;
+            case Join_threads:
+                if(socket_state.connection_count>0)
                 {
-                    node_t *var = NULL;
-                    node_t *tvar = NULL;
-                    TAILQ_FOREACH_SAFE(var,&head,nodes,tvar)
+                    worker_thread_t *var = NULL;
+                    worker_thread_t *tvar = NULL;
+                    TAILQ_FOREACH_SAFE(var,&head,entries,tvar)
                     {
                         if(var->thread_completed)
                         {
-                            TAILQ_REMOVE(&head, var, nodes);
+                            TAILQ_REMOVE(&head, var, entries);
                             pthread_join(var->thread_id,NULL);
                             free(var);
                             var = NULL;
-                            s_data.connection_count--;
+                            socket_state.connection_count--;
                         }
                     }
                 }
-                if(s_data.connection_count==0)
+                if(socket_state.connection_count==0)
                 {
-                    char time_val_buf[80];
-                    if(dequeue(time_val_buf)==0)
+                    //trylock instead of lock to prevent race conditions ending up in a deadlock.
+                    status = pthread_mutex_trylock(&socket_state.mutex);
+                    if(status == 0)
                     {
-                        status = pthread_mutex_trylock(&s_data.mutex);
-                        if(status == 0)
+                        char time_val_buf[80];
+                        if(dequeue_data_from_circ_buf(time_val_buf)==0)
                         {
-                            int fd = open(FILE_PATH,O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
+                            int fd = open(LOG_FILE,O_WRONLY|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
                             if(fd != -1)
                             {
-                                printf("File desc %d\n",fd);
-                                write_data(fd,time_val_buf,strlen(time_val_buf));
+                                dump_content(fd,time_val_buf,strlen(time_val_buf));
                                 close(fd);
                             }
-                            pthread_mutex_unlock(&s_data.mutex);
                         }
+                        pthread_mutex_unlock(&socket_state.mutex);
                     }
                 }
-                if(s_data.trigger)
+                if(socket_state.signal_caught)
                 {
-                    if(s_data.connection_count==0)
+                    if(socket_state.connection_count==0)
                     {
                         shutdown_function();
                     }
@@ -671,14 +933,9 @@ int main(int argc,char **argv)
                         break;
                     }
                 }
-                thread_type = accept_t;
+                main_thread_state = Accept_Connections;
                 break;
-            case send_t:
-            	break;
-            case recv_t:
-            	break; 
         }    
     }
 }
-
 
