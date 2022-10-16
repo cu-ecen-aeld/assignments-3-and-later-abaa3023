@@ -32,6 +32,44 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     /**
     * TODO: implement per description
     */
+    int num_entry = 0;
+    int out_offs_ptr = 0;
+    int count = 0;
+    //Check for NULL pointers
+    if(buffer == NULL){
+        return NULL;
+    }
+    if(entry_offset_byte_rtn == NULL){
+        return NULL;
+    }
+    if(buffer->in_offs > buffer->out_offs){
+        num_entry = (buffer->in_offs - buffer->out_offs) + 1;
+    }
+    else if(buffer->in_offs < buffer->out_offs){
+        num_entry = (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - buffer->out_offs) + buffer->in_offs + 1;
+    }
+    else{
+        if(buffer->full){
+            num_entry = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        }
+        else{
+            num_entry = 0;
+        }
+    }
+
+    out_offs_ptr = buffer->out_offs;
+    while(count < num_entry){
+        if(char_offset < buffer->entry[out_offs_ptr].size){
+            *entry_offset_byte_rtn = char_offset;
+            return (&buffer->entry[out_offs_ptr]);
+        }
+        char_offset = char_offset - buffer->entry[out_offs_ptr].size;
+        out_offs_ptr++;
+        if(out_offs_ptr == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED){
+            out_offs_ptr = 0;
+        }
+        count++;
+    }
     return NULL;
 }
 
@@ -44,9 +82,29 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 */
 void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-    /**
-    * TODO: implement per description
-    */
+   //Check for NULL pointers
+   if(buffer == NULL){
+       return;
+   }
+   if(add_entry == NULL){
+       return;
+   }
+   if(add_entry->buffptr == NULL){
+       return;
+   }
+   if(add_entry->size == 0){
+       return;
+   }
+   
+   // if full condition
+   if(buffer->full){
+       buffer->out_offs++;
+   }
+   buffer->entry[buffer->in_offs] = *add_entry;
+   buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+   if((buffer->in_offs == buffer->out_offs) && (!buffer->full)){
+        buffer->full = true;
+   }
 }
 
 /**
