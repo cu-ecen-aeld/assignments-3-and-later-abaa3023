@@ -1,48 +1,42 @@
-#
-# Configuration file for the oops.kernel.org kernel crash collector
-#
-
-#
-# Set the following variable to "yes" if you want to automatically
-# submit your oopses to the database for use by your distribution or the
-# Linux kernel developers
-#
-#
-# PRIVACY NOTE
-# Enabling this option will cause your system to submit certain kernel
-# output to the oops.kernel.org website, where it will be available via
-# this website to developers and everyone else.
-# The submitted info are so-called "oopses", kernel crash signature.
-# However, due to the nature of oopses, it may happen that a few 
-# surrounding lines of the oops in the "dmesg" are being sent together
-# with the oops.
-#
-# Default is "ask" which uses a UI application t ask the user for permission
-#
-allow-submit = ask
-
-#
-# Set the following variable to "yes" if you want to allow your 
-# Linux distribution vendor to pass the oops on to the central oops.kernel.org
-# database as used by the Linux kernel developers
-#
-allow-pass-on = yes
-
-#
-# URL for submitting the oopses
-#
-
-submit-url = http://oops.kernel.org/submitoops.php
-
-#
-# Path to syslog file containing full kernel logging output
-#
-
-log-file = /var/log/kern.log
-
-#
-# Script or program to pipe oops submits to
-# Comment out for no pipe submission
-#
-
-submit-pipe = /usr/share/apport/kernel_oops
+<pre>Unable to handle kernel NULL pointer dereference at virtual address 0000000000000000
+Mem abort info:
+  ESR = 0x96000045
+  EC = 0x25: DABT (current EL), IL = 32 bits
+  SET = 0, FnV = 0
+  EA = 0, S1PTW = 0
+  FSC = 0x05: level 1 translation fault
+Data abort info:
+  ISV = 0, ISS = 0x00000045
+  CM = 0, WnR = 1
+user pgtable: 4k pages, 39-bit VAs, pgdp=0000000042121000
+[0000000000000000] pgd=0000000000000000, p4d=0000000000000000, pud=0000000000000000
+Internal error: Oops: 96000045 [#1] SMP
+Modules linked in: scull(O) faulty(O) hello(O)
+CPU: 0 PID: 158 Comm: sh Tainted: G           O      5.15.18 #1
+Hardware name: linux,dummy-virt (DT)
+pstate: 80000005 (Nzcv daif -PAN -UAO -TCO -DIT -SSBS BTYPE=--)
+pc : faulty_write+0x14/0x20 [faulty]
+lr : vfs_write+0xa8/0x2b0
+sp : ffffffc008c8bd80
+x29: ffffffc008c8bd80 x28: ffffff80020fa640 x27: 0000000000000000
+x26: 0000000000000000 x25: 0000000000000000 x24: 0000000000000000
+x23: 0000000040001000 x22: 000000000000000c x21: 0000005573612a70
+x20: 0000005573612a70 x19: ffffff8002050d00 x18: 0000000000000000
+x17: 0000000000000000 x16: 0000000000000000 x15: 0000000000000000
+x14: 0000000000000000 x13: 0000000000000000 x12: 0000000000000000
+x11: 0000000000000000 x10: 0000000000000000 x9 : 0000000000000000
+x8 : 0000000000000000 x7 : 0000000000000000 x6 : 0000000000000000
+x5 : 0000000000000001 x4 : ffffffc0006f5000 x3 : ffffffc008c8bdf0
+x2 : 000000000000000c x1 : 0000000000000000 x0 : 0000000000000000
+Call trace:
+ faulty_write+0x14/0x20 [faulty]
+ ksys_write+0x68/0x100
+ __arm64_sys_write+0x20/0x30
+ invoke_syscall+0x54/0x130
+ el0_svc_common.constprop.0+0x44/0xf0
+ do_el0_svc+0x40/0xa0
+ el0_svc+0x20/0x60
+ el0t_64_sync_handler+0xe8/0xf0
+ el0t_64_sync+0x1a0/0x1a4
+Code: d2800001 d2800000 d503233f d50323bf (b900003f) 
+---[ end trace f9cb42a431150e2e ]---</pre>

@@ -32,45 +32,41 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
     /**
     * TODO: implement per description
     */
-    //Error handling for invalid inputs
+    int num_entry = 0;
+    int out_offs_ptr = 0;
+    int count = 0;
+    //Check for NULL pointers
     if(buffer == NULL){
         return NULL;
     }
     if(entry_offset_byte_rtn == NULL){
         return NULL;
     }
-    uint8_t nElements = 0;              //Stores number of elements in the buffer
     if(buffer->in_offs > buffer->out_offs){
-        nElements = (buffer->in_offs - buffer->out_offs) + 1;
+        num_entry = (buffer->in_offs - buffer->out_offs) + 1;
     }
-    else if(buffer->out_offs > buffer->in_offs){
-        nElements = (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - buffer->out_offs) + buffer->in_offs + 1;
-        // nElements = (buffer->out_offs - buffer->in_offs) + 1;
+    else if(buffer->in_offs < buffer->out_offs){
+        num_entry = (AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - buffer->out_offs) + buffer->in_offs + 1;
     }
-    else{                               //in and out pointers are equal
+    else{
         if(buffer->full){
-            nElements = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+            num_entry = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
         }
         else{
-            nElements = 0;
+            num_entry = 0;
         }
     }
 
-    //traversing thorugh the buffer to check the offset
-    int pread = buffer->out_offs;           //Start reading from out pointer
-    int count = 0;
-    while(count < nElements){
-        if(char_offset < buffer->entry[pread].size){
-            //offset located in the current buffer
+    out_offs_ptr = buffer->out_offs;
+    while(count < num_entry){
+        if(char_offset < buffer->entry[out_offs_ptr].size){
             *entry_offset_byte_rtn = char_offset;
-            return (&buffer->entry[pread]);
+            return (&buffer->entry[out_offs_ptr]);
         }
-        //Offset beyond the current buffer entry
-        char_offset -= buffer->entry[pread].size;
-        //handling incrementation and wrap around
-        pread++;
-        if(pread == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED){
-            pread = 0;
+        char_offset = char_offset - buffer->entry[out_offs_ptr].size;
+        out_offs_ptr++;
+        if(out_offs_ptr == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED){
+            out_offs_ptr = 0;
         }
         count++;
     }
@@ -86,30 +82,26 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 */
 void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const struct aesd_buffer_entry *add_entry)
 {
-   //Handling error cases below
-   //Check if any of the input parameter pointer is NULL
+   //Check for NULL pointers
    if(buffer == NULL){
        return;
    }
    if(add_entry == NULL){
        return;
    }
-   //Check if any of the element of the pointer to the buffer structure is NULL or 0
    if(add_entry->buffptr == NULL){
        return;
    }
    if(add_entry->size == 0){
        return;
    }
+   
+   // if full condition
    if(buffer->full){
-       //Increment the out offset pointer when buffer is full
        buffer->out_offs++;
    }
-   //Writing to the buffer on the input pointer
    buffer->entry[buffer->in_offs] = *add_entry;
-   //Increment buffer each time
    buffer->in_offs = (buffer->in_offs + 1) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
-   //managing the wrap around conditions
    if((buffer->in_offs == buffer->out_offs) && (!buffer->full)){
         buffer->full = true;
    }
