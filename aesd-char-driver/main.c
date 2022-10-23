@@ -214,10 +214,9 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             }
         }
     }
-    //free local buffer
-    copy_buff_free: kfree(buffer);
-    release_lock: mutex_unlock(&data->m);
-    ret_func: return retval;
+    kfree(buffer);
+    mutex_unlock(&data->m);
+    return retval;
 }
 struct file_operations aesd_fops = {
     .owner =    THIS_MODULE,

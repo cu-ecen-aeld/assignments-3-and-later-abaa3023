@@ -1,13 +1,4 @@
 /*
-*   file:      writer.c
-*   brief:     implements the functionality of writer.sh. Takes 2 arguments <text-file-path> and <string> and writes the string into the file.
-*              Assumes that the path to the file already exists.
-*   author:    Guruprashanth Krishnakumar, gukr5411@colorado.edu
-*   date:      09/04/2022
-*   refs:      Ch.2 of Linux System Programming by Robert Love, lecture slides of ECEN 5713 - Advanced Embedded Software Dev.
-*/
-
-/*
 *   HEADER FILES
 */
 #include <stdio.h>

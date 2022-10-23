@@ -1,8 +1,4 @@
 #!/bin/bash
-# Script outline to install and build kernel.
-# Author: Guruprashanth Krishnakumar, gukr5411@colorado.edu
-# References: AESD Lecture Slides, starter code was provided as part of assignment
-
 set -e
 set -u
 

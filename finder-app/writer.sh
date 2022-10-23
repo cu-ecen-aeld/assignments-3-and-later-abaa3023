@@ -1,6 +1,4 @@
 #!/bin/bash
-#Commands leveraged from lecture slides as well as internet (stack overflow)
-#if number of arguments are less than 2 return error
 if [ $# -lt 2 ]
 then
     echo Please supply the directory name as arg1 and the string to search as arg2

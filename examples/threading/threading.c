@@ -1,12 +1,4 @@
 /*
-*   file:      threading.c
-*   brief:     Creates a thread which sleeps a specified amount of milliseconds before acquiring a mutex, then sleeps a specified amount of milliseconds before releasing it
-*   author:    Guruprashanth Krishnakumar, gukr5411@colorado.edu
-*   date:      09/13/2022
-*   refs:      Ch.7 of Linux System Programming by Robert Love, lecture slides of ECEN 5713 - Advanced Embedded Software Dev.
-*/
-
-/*
 *   HEADER FILES
 */
 #include "threading.h"
