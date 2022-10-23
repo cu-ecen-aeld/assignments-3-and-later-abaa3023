@@ -1,3 +1,6 @@
+# Makefile for writer.c
+# Author: Guruprashanth Krishnakumar, gukr5411@colorado.edu
+# Date: 09/04/2022
 INCLUDES ?= 
 LIB_DIRS = 
 # CROSS_COMPILE variable initially set to nothing. Will be over-written if value is passed in the command-line.

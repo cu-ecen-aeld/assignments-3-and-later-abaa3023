@@ -9,7 +9,7 @@ Use the instructions at [Setup Git](https://help.github.com/en/articles/set-up-g
 
 See instructions in [Setting-up-SSH-Access-To-your-Repo](https://github.com/cu-ecen-aeld/aesd-assignments/wiki/Setting-up-SSH-Access-To-your-Repo) for details.
 
-## Specific Assignment Instruction
+## Specific Assignment Instructions
 
 Some assignments require further setup to pull in example code or make other changes to your repository before starting.  In this case, see the github classroom assignment start instructions linked from the assignment document for details about how to use this repository.
 

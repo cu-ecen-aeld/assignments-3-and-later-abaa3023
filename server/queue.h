@@ -785,4 +785,3 @@ struct {								\
 } while (0)
 
 #endif /* !_SYS_QUEUE_H_ */
-

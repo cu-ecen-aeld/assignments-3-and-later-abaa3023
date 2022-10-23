@@ -1,7 +1,6 @@
 #!/bin/sh
 # Tester script for assignment 1 and assignment 2
-# Author: Siddhant Jajooo
-# seeked help from Guruprashanth Krishnakumar
+# Author: Siddhant Jajoo
 
 set -e
 set -u
@@ -69,5 +68,3 @@ else
 	echo "failed: expected  ${MATCHSTR} in ${OUTPUTSTRING} but instead found"
 	exit 1
 fi
-
-

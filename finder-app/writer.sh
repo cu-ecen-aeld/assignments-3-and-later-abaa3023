@@ -1,68 +1,20 @@
 #!/bin/bash
-
-# Check for number of arguments. Minimum number of required argumnets is 2
-
-if [ $# != 2 ]
+#Commands leveraged from lecture slides as well as internet (stack overflow)
+#if number of arguments are less than 2 return error
+if [ $# -lt 2 ]
 then
-	echo 'Kindly enter 2 arguments.'
-	echo 'First argument is file directory.'
-	echo 'Second argument is text string to be searched within the respective files in the mentioned file directory'
-	exit 1
+    echo Please supply the directory name as arg1 and the string to search as arg2
+    exit 1
 fi
-
-
-# split file directory path into arra
-IFS='/' read -ra dir_array <<< $1
-	
-#save current size
-size=${#dir_array[@]}
-	
-# save filename in file
-file=${dir_array[$size-1]}
-	
-# remove filename from input file directory path
-unset dir_array[$size-1]
-
-#convert back array to split string for file path
-IFS='/';modified_file_directory="${dir_array[*]}";IFS=$' \t\n'
-
-# Check for valid directory
-
-if ! [ -f $1 ]
+#if subdirectories in the argument passed are not present, create the subdirectories first.
+mkdir -p "$(dirname "$1")" 
+#check if the previous command was successful
+if [ $? -eq 1 ] 
 then
-	#remove first element from input file directory path
-	unset dir_array[0]
-	
-	# set root directory
-	cd /
-	
-	# iterate through every folder mentioned in input directory path
-	for folder in "${dir_array[@]}"; do
-		# if folder does not exist, create one and add to path
-		# else set path to folder
-		if ! [ -d $folder ]
-		then
-			mkdir $folder
-			cd $folder
-		else
-			cd $folder
-		
-		fi
-	done
-	
-	# create file
-	touch $file
-	
-	# write to file
-	echo $2>$file
-
+    echo File could not be created
+    exit 1
 else
-
-	#goes to the specified directory
-	cd $modified_file_directory
-	
-	#write data to file
-	echo $2 > $file
-		
+    echo File created and string written
 fi
-
+#write string to text file.
+echo $2 > $1

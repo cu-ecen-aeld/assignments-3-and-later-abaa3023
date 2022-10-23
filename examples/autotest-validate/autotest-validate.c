@@ -1,5 +1,5 @@
 /**
-* A simple file to validate your automated test setup for AESD.
+* A simple file to validate your automated test setup for AESD
 */
 
 #include "autotest-validate.h"
@@ -27,5 +27,5 @@ bool this_function_returns_false()
  */
 const char *my_username()
 {
-    return "abaa3023";
+    return "GuruprashanthKrishnakumar";
 }
