@@ -170,7 +170,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             //else realloc 
             mem_to_malloc = (i-start_ptr) +1;
 
-            if(allocate_memory(&data, mem_to_malloc)<0)
+            if(allocate_memory(data, mem_to_malloc)<0)
             {
                 retval = -ENOMEM;
 		 kfree(buffer);
@@ -201,7 +201,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 mem_to_malloc = (i-start_ptr) +1;
                 //check if working buffer size is 0, if it is malloc
                 //else realloc 
-                if(allocate_memory(&data, mem_to_malloc)<0)
+                if(allocate_memory(data, mem_to_malloc)<0)
                 {
                     retval = -ENOMEM;
 		     kfree(buffer);
