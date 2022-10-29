@@ -122,8 +122,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 {
     ssize_t retval = 0;
     struct aesd_dev *data;
-    struct aesd_buffer_entry enqueue_buffer;
-    int mem_to_malloc,i,start_ptr = 0;
+    struct aesd_buffer_entry buffer_entry;
+    int delimiter_idx = 0, mem_to_malloc,i,first_idx = 0;
     char *free_buffer, *buffer;
     size_t size;
     if(!filp || !filp->private_data)
@@ -139,7 +139,6 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         return retval;
     }
 
-    //block on mutex lock, can be interrupted by signal
     if (mutex_lock_interruptible(&data->m))
     {
         retval = -EINTR;
@@ -162,57 +161,55 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 	return retval;
     }
 
-    for(i = 0;i<count;i++)
+    while(delimiter_idx != -1)
     {
-        if(buffer[start_ptr+i]=='\n')
+    	int *buffer_ptr = &buffer[first_idx];
+	for(int i = 0;i<(count-first_idx);i++)
+	{
+		if(buffer_ptr[i] == '\n')
+		{
+		    delimiter_idx = i;
+		    break;
+		}
+	else
+		{
+		    delimiter_idx = -1;
+		}
+	}
+        
+        if(delimiter_idx==-1)
         {
-            //check if working buffer size is 0, if it is malloc
-            //else realloc 
-            mem_to_malloc = (i-start_ptr) +1;
-
-            if(allocate_memory(data, mem_to_malloc)<0)
-            {
-                retval = -ENOMEM;
-		 kfree(buffer);
-		 mutex_unlock(&data->m);
-		 return retval;
-            }
-            //Copy data to global buffer
-            memcpy((data->buffer + data->size),(buffer+start_ptr),mem_to_malloc);
-            data->size += mem_to_malloc;
-            enqueue_buffer.buffptr = data->buffer;  
-            enqueue_buffer.size = data->size;
-            //enqueue data
-            free_buffer = aesd_circular_buffer_add_entry(&data->circular_buffer,&enqueue_buffer);
-            //if overwrite was performed, free overwrtten buffer
+        	mem_to_malloc = (count - first_idx);
+        }
+        else
+        {
+        	mem_to_malloc = ((delimiter_idx-first_idx) +1);
+        }
+        
+        if(allocate_memory(&data, mem_to_malloc)<0)
+        {
+            retval = -ENOMEM;  
+            kfree(buffer);
+	    mutex_unlock(&data->m);
+	    return retval;
+        }
+        
+        memcpy((data->buffer + data->size),(buffer+first_idx),mem_to_malloc);
+        data->size += mem_to_malloc;
+        
+        if(delimiter_idx != -1)
+        {
+            buffer_entry.buffptr = data->buffer;  
+            buffer_entry.size = data->size;
+            free_buffer = aesd_circular_buffer_add_entry(&data->circular_buffer,&buffer_entry);
             if(free_buffer)
             {
                 kfree(free_buffer);
             }
             data->size = 0;
-            //update start pointer in case multiple \n present
-            start_ptr = i+1;
-            retval += mem_to_malloc;
+            first_idx += delimiter_idx+1;
         }
-        if(i == count - 1)
-        {
-            if(buffer[i] != '\n')
-            {
-                mem_to_malloc = (i-start_ptr) +1;
-                //check if working buffer size is 0, if it is malloc
-                //else realloc 
-                if(allocate_memory(data, mem_to_malloc)<0)
-                {
-                    retval = -ENOMEM;
-		     kfree(buffer);
-		     mutex_unlock(&data->m);
-		     return retval;
-                }
-                memcpy((data->buffer + data->size),(buffer+start_ptr),mem_to_malloc);
-                data->size += mem_to_malloc;
-                retval += mem_to_malloc;
-            }
-        }
+        retval += mem_to_malloc;
     }
     kfree(buffer);
     mutex_unlock(&data->m);
