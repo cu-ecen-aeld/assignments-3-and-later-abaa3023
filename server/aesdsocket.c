@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <time.h>
+#include "aesd_ioctl.h"
 /*
 *   MACROS
 */
@@ -542,13 +543,26 @@ static void* aesd_char_thread(void* thread_param)
                         
                         int bytes_written_until_newline = (num_bytes_to_read - temp_read_var);
                         
-                        if(dump_content(file_descriptor,&buf[start_ptr],bytes_written_until_newline)==-1)
+                        if(strncmp(&buf[start_ptr]), "AESDCHAR_IOCSEEKTO:", strlen("AESDCHAR_IOCSEEKTO:")==0)
                         {
-                            close(file_descriptor);
-			    free(buf);
-			    close(thread_params->socket_file_descriptor);
-			    thread_params->thread_completed = true;
-			    return 0;
+                        	struct aesd_seekto seekto;
+                        	sscanf(&buf[start_ptr], "AESDCHAR_IOCSEEKTO:%d,%d", &seekto.write_cmd, &seekto.write_cmd_offset);
+                        	printf("Write cmd %d, offset %d\n", seekto.writecmd, seekto.write_cmd_offset);
+                        	if(ioctl(file_descriptor, AESD_IOCSEEKTO, &seekto))
+                        	{
+                        		syslog(LOG_ERR, "IOCTL: %s", strerror(errno));
+                        	}
+                        }
+                        else
+                        {
+		                if(dump_content(file_descriptor,&buf[start_ptr],bytes_written_until_newline)==-1)
+		                {
+		                    close(file_descriptor);
+				    free(buf);
+				    close(thread_params->socket_file_descriptor);
+				    thread_params->thread_completed = true;
+				    return 0;
+		                }
                         }                        
                         
                         if(echo_file_socket(file_descriptor,thread_params->socket_file_descriptor)==-1)

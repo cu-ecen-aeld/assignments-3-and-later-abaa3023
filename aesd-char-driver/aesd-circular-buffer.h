@@ -32,6 +32,7 @@ struct aesd_buffer_entry
 
 struct aesd_circular_buffer
 {
+    size_t size;
     /**
      * An array of pointers to memory allocated for the most recent write operations
      */
@@ -76,7 +77,6 @@ extern void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer);
     for(index=0, entryptr=&((buffer)->entry[index]); \
             index<AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; \
             index++, entryptr=&((buffer)->entry[index]))
-
 
 
 #endif /* AESD_CIRCULAR_BUFFER_H */

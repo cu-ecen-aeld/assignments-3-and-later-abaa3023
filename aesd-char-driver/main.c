@@ -5,7 +5,7 @@
  * @author Dan Walkes
  * @date 2019-10-22
  * @copyright Copyright (c) 2019
- * seeked help from Guru and fellow classmates regarding allocating buffer function
+ * seeked help from Guru and fellow classmates regarding allocating buffer function and aesd_ioctl function
  */
 
 #include <linux/module.h>
@@ -19,6 +19,7 @@
 #include <linux/fs.h> // file_operations
 
 #include "aesdchar.h"
+#include "aesd_ioctl.h"
 int aesd_major =   0; // use dynamic major
 int aesd_minor =   0;
 
@@ -26,6 +27,7 @@ MODULE_AUTHOR("abaa3023"); /** TODO: fill in your name **/
 MODULE_LICENSE("Dual BSD/GPL");
 
 struct aesd_dev aesd_device;
+
 
 static int allocate_memory(struct aesd_dev *dev, int size)
 {
@@ -79,7 +81,6 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     ssize_t retval = 0, offset, user_copy_bytes;
     struct aesd_dev *dev;
     struct aesd_buffer_entry *entry;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
     if(!filp || !filp->private_data)
     {
         retval = -EINVAL;
@@ -123,7 +124,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     ssize_t retval = 0;
     struct aesd_dev *data;
     struct aesd_buffer_entry buffer_entry;
-    int delimiter_idx = 0, mem_to_malloc,i,first_idx = 0;
+    int delimiter_idx = 0, update_size,i,first_idx = 0;
     char *free_buffer, *buffer;
     size_t size;
     if(!filp || !filp->private_data)
@@ -149,7 +150,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if(!buffer)
     {
         retval = -ENOMEM;
-        mutex_unlock(&data->m);
+        //mutex_unlock(&data->m);
+	kfree(buffer);
 	return retval;
     }
     size = count;
@@ -157,7 +159,8 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (copy_from_user(buffer, buf, count)) 
     {
 	retval = -EFAULT;
-        mutex_unlock(&data->m);
+        //mutex_unlock(&data->m);
+	kfree(buffer);
 	return retval;
     }
 
@@ -179,23 +182,23 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         
         if(delimiter_idx==-1)
         {
-        	mem_to_malloc = (count - first_idx);
+        	update_size = (count - first_idx);
         }
         else
         {
-        	mem_to_malloc = ((delimiter_idx-first_idx) +1);
+        	update_size = ((delimiter_idx-first_idx) +1);
         }
         
-        if(allocate_memory(&data, mem_to_malloc)<0)
+        if(allocate_memory(&data, update_size)<0)
         {
             retval = -ENOMEM;  
             kfree(buffer);
-	    mutex_unlock(&data->m);
+	    //mutex_unlock(&data->m);
 	    return retval;
         }
         
-        memcpy((data->buffer + data->size),(buffer+first_idx),mem_to_malloc);
-        data->size += mem_to_malloc;
+        memcpy((data->buffer + data->size),(buffer+first_idx),update_size);
+        data->size += update_size;
         
         if(delimiter_idx != -1)
         {
@@ -209,18 +212,86 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             data->size = 0;
             first_idx += delimiter_idx+1;
         }
-        retval += mem_to_malloc;
+        retval += update_size;
     }
     kfree(buffer);
-    mutex_unlock(&data->m);
+    //mutex_unlock(&data->m);
     return retval;
 }
+
+loff_t aesd_llseek(struct file *filp, loff_t offset, int source)
+{
+    loff_t ret_val;
+    struct aesd_dev *data;
+    if(!filp->private_data)
+    {
+        ret_val = -EINVAL;
+        return ret_val;
+    }
+    data = filp->private_data;
+    if (mutex_lock_interruptible(&data->lock))
+    {
+        ret_val = -EINTR;      
+        return ret_val;
+    }
+    ret_val = fixed_size_llseek(filp, offset, source, data->circular_buffer.buff_size);
+    mutex_unlock(&data->lock);
+    return ret_val;
+}
+
+
+long aesd_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+    int retval = 0;
+    struct aesd_seekto seekto;
+    if (_IOC_TYPE(cmd) != AESD_IOC_MAGIC) return -ENOTTY;
+	if (_IOC_NR(cmd) > AESDCHAR_IOC_MAXNR) return -ENOTTY;
+
+    switch(cmd)
+    {
+        case AESDCHAR_IOCSEEKTO:
+            if(copy_from_user(&seekto,(const void __user *)arg,sizeof(seekto))!=0)
+            {
+                retval = -EFAULT;
+            } 
+            else
+            {
+		struct aesd_dev *data;
+		loff_t offset=0;
+		int ret_val;
+		if(!filp->private_data)
+		{
+			retval = -EINVAL;
+		}
+		data = filp->private_data;
+		if (mutex_lock_interruptible(&data->lock))
+		{
+			retval = -ERESTARTSYS;
+		}
+
+		for(int i=0;i<(seekto.write_cmd);i++)
+		{
+			offset += data->circular_buffer->entry[i].size;
+		}
+		offset = offset + seekto.write_cmd_offset;
+            }
+            break;
+        default:
+            retval = -ENOTTY;
+            break;
+    }
+    return retval;
+}
+
+
 struct file_operations aesd_fops = {
-    .owner =    THIS_MODULE,
-    .read =     aesd_read,
-    .write =    aesd_write,
-    .open =     aesd_open,
-    .release =  aesd_release,
+    .owner =            THIS_MODULE,
+    .read =             aesd_read,
+    .write =            aesd_write,
+    .llseek =           aesd_llseek,
+    .unlocked_ioctl =   aesd_ioctl,
+    .open =             aesd_open,
+    .release =          aesd_release,
 };
 
 static int aesd_setup_cdev(struct aesd_dev *dev)
