@@ -118,6 +118,33 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
     return retval;
 }
 
+
+loff_t offset_value(struct aesd_circular_buffer *buffer,unsigned int buf_no, unsigned int offset_within_buf)
+{
+    int i,offset = 0;
+    printk("aesdchar: Searching for return offset");
+    if(buf_no>(AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)-1)
+    {
+        printk("aesdchar: Invalid buffer number");
+        return -1;
+    }
+    if(offset_within_buf > (buffer->entry[buf_no].size - 1))
+    {
+        printk("aesdchar: Invalid offset");
+        return -1;
+    }
+    for(i=0;i<(buf_no);i++)
+    {
+        printk("aesdchar: i %d ",i);
+        if(buffer->entry[i].size == 0)
+        {
+            return -1;
+        }
+        offset += buffer->entry[i].size;
+    }
+    return (offset + offset_within_buf);
+}
+
 static long aesd_adjust_file_offset(struct file *filp,unsigned int write_cmd, unsigned int write_cmd_offset)
 {
     struct aesd_dev *data;
@@ -132,7 +159,7 @@ static long aesd_adjust_file_offset(struct file *filp,unsigned int write_cmd, un
     {
         return -ERESTARTSYS;
     }
-    offset = ret_offset(&data->circular_buffer,write_cmd,write_cmd_offset);
+    offset = offset_value(&data->circular_buffer,write_cmd,write_cmd_offset);
     PDEBUG("Adjust offset to %lld for buf no %u, offset %u",offset,write_cmd,write_cmd_offset);
     if(offset == -1)
     {
