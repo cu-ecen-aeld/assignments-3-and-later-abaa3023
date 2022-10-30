@@ -77,7 +77,16 @@ typedef struct
 }socket_state_t;
 socket_state_t socket_state;
 
-#ifndef USE_AESD_CHAR_DEVICE
+#ifdef USE_AESD_CHAR_DEVICE
+typedef struct
+{
+	const char *command;
+} command_table_t;
+
+static const command_table_t commands[] = {
+    {"AESDCHAR_IOCSEEKTO:"}
+};
+#else
 typedef struct
 {
     char time_string[100];
@@ -543,7 +552,7 @@ static void* aesd_char_thread(void* thread_param)
                         
                         int bytes_written_until_newline = (num_bytes_to_read - temp_read_var);
                         
-                        if(strncmp(&buf[start_ptr]), "AESDCHAR_IOCSEEKTO:", strlen("AESDCHAR_IOCSEEKTO:")==0)
+                        if(strncmp(&buf[start_ptr], commands[0].command, strlen(commands[0].command))==0)
                         {
                         	struct aesd_seekto seekto;
                         	sscanf(&buf[start_ptr], "AESDCHAR_IOCSEEKTO:%d,%d", &seekto.write_cmd, &seekto.write_cmd_offset);
