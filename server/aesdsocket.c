@@ -556,8 +556,8 @@ static void* aesd_char_thread(void* thread_param)
                         {
                         	struct aesd_seekto seekto;
                         	sscanf(&buf[start_ptr], "AESDCHAR_IOCSEEKTO:%d,%d", &seekto.write_cmd, &seekto.write_cmd_offset);
-                        	printf("Write cmd %d, offset %d\n", seekto.writecmd, seekto.write_cmd_offset);
-                        	if(ioctl(file_descriptor, AESD_IOCSEEKTO, &seekto))
+                        	printf("Write cmd %d, offset %d\n", seekto.write_cmd, seekto.write_cmd_offset);
+                        	if(ioctl(file_descriptor, AESDCHAR_IOCSEEKTO, &seekto))
                         	{
                         		syslog(LOG_ERR, "IOCTL: %s", strerror(errno));
                         	}
