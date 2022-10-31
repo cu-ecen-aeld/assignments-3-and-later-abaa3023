@@ -37,8 +37,9 @@
     #define LOG_FILE                ("/var/tmp/aesdsocketdata")
     #define CIRCULAR_BUF_DEPTH      (8)
 #endif
-
-
+/*
+*   GLOBALS
+*/
 typedef enum
 {
     Accept_Connections,
@@ -102,6 +103,9 @@ typedef struct
 circular_buf_metadata_t circular_buf;
 #endif
 
+/*
+*   FUNCTION DEFINITIONS
+*/
 
 #ifndef USE_AESD_CHAR_DEVICE
 static void initialize_circular_buf()
@@ -180,7 +184,6 @@ static void disarm_and_destroy_timer()
     timer_delete(socket_state.timer_1);
 }
 
-
 static void alarmhandler()
 {
     time_t rawtime;
@@ -193,13 +196,6 @@ static void alarmhandler()
     
 }
 #endif
-
-
-static void sighandler()
-{
-    socket_state.signal_caught = true;
-}
-
 
 static int setup_signal(int signo)
 {
@@ -264,11 +260,14 @@ static void shutdown_function()
     printf("\nCaught Signal. Exiting\n");
     perform_cleanup();
     #ifndef USE_AESD_CHAR_DEVICE
-    	unlink("/var/tmp/aesdsocketdata");
+    unlink("/var/tmp/aesdsocketdata");
     #endif
     exit(1);
 }
-
+static void sighandler()
+{
+    socket_state.signal_caught = true;
+}
 
 static void *get_in_addr(struct sockaddr *sa)
 {
@@ -355,8 +354,9 @@ static void* server_thread(void* thread_param)
                         if(!buf)
                         {
                             close(thread_params->socket_file_descriptor);
-                    	     thread_params->thread_completed = true;
-                            return 0;
+		            thread_params->thread_completed = true;
+		            syslog(LOG_DEBUG,"Closed connection from %s",thread_params->ip_addr);
+		            return 0;
                         }
                     }
                     else
@@ -366,10 +366,10 @@ static void* server_thread(void* thread_param)
                         new_buf = realloc(buf,new_len);     
                         if(!new_buf)
                         {
-                            free(buf);
-                            close(thread_params->socket_file_descriptor);
-			     thread_params->thread_completed = true;
-			     return 0;
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
                         buf = new_buf;           
                     }
@@ -379,10 +379,11 @@ static void* server_thread(void* thread_param)
                 num_bytes_read = recv(thread_params->socket_file_descriptor,(buf+buf_len),(buf_cap - buf_len),0);
                 if(num_bytes_read == -1)
                 {
-                    free(buf);
-		     close(thread_params->socket_file_descriptor);
-		     thread_params->thread_completed = true;
-		     return 0;
+			free(buf);
+			close(thread_params->socket_file_descriptor);
+			thread_params->thread_completed = true;
+			syslog(LOG_DEBUG,"Closed connection from %s",thread_params->ip_addr);
+			return 0;
                 }
                 else if(num_bytes_read>0)
                 {
@@ -390,10 +391,11 @@ static void* server_thread(void* thread_param)
                 }
                 else if(num_bytes_read == 0)
                 {
-                    free(buf);
-		    close(thread_params->socket_file_descriptor);
-		    thread_params->thread_completed = true;
-		    return 0;
+			free(buf);
+			close(thread_params->socket_file_descriptor);
+			thread_params->thread_completed = true;
+			syslog(LOG_DEBUG,"Closed connection from %s",thread_params->ip_addr);
+			return 0;
                 }
                 break;
             case Parse_data:
@@ -407,37 +409,39 @@ static void* server_thread(void* thread_param)
                         status = pthread_mutex_lock(&socket_state.mutex);
                         if(status != 0)
                         {
-                            free(buf);
-			    close(thread_params->socket_file_descriptor);
-			    thread_params->thread_completed = true;
-			    return 0;
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
                         file_descriptor = open(LOG_FILE,O_RDWR|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
                         if(file_descriptor == -1)
                         {
-                            pthread_mutex_unlock(&socket_state.mutex);
-			    close(thread_params->socket_file_descriptor);
-			    thread_params->thread_completed = true;
-			    return 0;
+				pthread_mutex_unlock(&socket_state.mutex);
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
-                        
                         int bytes_written_until_newline = (num_bytes_to_read - temp_read_var);
                         if(dump_content(file_descriptor,&buf[start_ptr],bytes_written_until_newline)==-1)
                         {
-                            close(file_descriptor);
-			    pthread_mutex_unlock(&socket_state.mutex);
-			    close(thread_params->socket_file_descriptor);
-			    thread_params->thread_completed = true;
-			    return 0;
+				close(file_descriptor);
+				pthread_mutex_unlock(&socket_state.mutex);
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }                        
                         lseek(file_descriptor, 0, SEEK_SET );
                         if(echo_file_socket(file_descriptor,thread_params->socket_file_descriptor)==-1)
                         {
-                            close(file_descriptor);
-			    pthread_mutex_unlock(&socket_state.mutex);
-			    close(thread_params->socket_file_descriptor);
-			    thread_params->thread_completed = true;
-			    return 0;
+				close(file_descriptor);
+				pthread_mutex_unlock(&socket_state.mutex);
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
                         char time_buf_string[80];
                     
@@ -453,10 +457,11 @@ static void* server_thread(void* thread_param)
                         status = pthread_mutex_unlock(&socket_state.mutex);
                         if(status != 0)
                         {
-                           pthread_mutex_unlock(&socket_state.mutex);
-			    close(thread_params->socket_file_descriptor);
-			    thread_params->thread_completed = true;
-			    return 0;
+				pthread_mutex_unlock(&socket_state.mutex);
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
                         break;
                     }
@@ -468,6 +473,7 @@ static void* server_thread(void* thread_param)
     }
     close(file_descriptor);
     pthread_mutex_unlock(&socket_state.mutex);
+    free(buf);
     close(thread_params->socket_file_descriptor);
     thread_params->thread_completed = true;
     return 0;
@@ -490,9 +496,9 @@ static void* aesd_char_thread(void* thread_param)
                         buf = malloc(BUF_SIZE_UNIT);
                         if(!buf)
                         {
-                            close(thread_params->socket_file_descriptor);
-                    	     thread_params->thread_completed = true;
-                            return 0;
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
                     }
                     else
@@ -502,10 +508,10 @@ static void* aesd_char_thread(void* thread_param)
                         new_buf = realloc(buf,new_len);     
                         if(!new_buf)
                         {
-                            free(buf);
-                            close(thread_params->socket_file_descriptor);
-			     thread_params->thread_completed = true;
-			     return 0;
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
                         buf = new_buf;           
                     }
@@ -515,10 +521,10 @@ static void* aesd_char_thread(void* thread_param)
                 num_bytes_read = recv(thread_params->socket_file_descriptor,(buf+buf_len),(buf_cap - buf_len),0);
                 if(num_bytes_read == -1)
                 {
-                    free(buf);
-		    close(thread_params->socket_file_descriptor);
-		    thread_params->thread_completed = true;
-		    return 0;
+			free(buf);
+			close(thread_params->socket_file_descriptor);
+			thread_params->thread_completed = true;
+			return 0;
                 }
                 else if(num_bytes_read>0)
                 {
@@ -526,15 +532,14 @@ static void* aesd_char_thread(void* thread_param)
                 }
                 else if(num_bytes_read == 0)
                 {
-                    free(buf);
-		    close(thread_params->socket_file_descriptor);
-		    thread_params->thread_completed = true;
-		    return 0;
+			free(buf);
+			close(thread_params->socket_file_descriptor);
+			thread_params->thread_completed = true;
+			return 0;
                 }
                 break;
             case Parse_data:
                 num_bytes_to_read = ((buf_len - start_ptr) + num_bytes_read);
-                
                 int temp_read_var = num_bytes_to_read;
                 for(ptr = &buf[start_ptr];temp_read_var>0;ptr++,temp_read_var--)
                 {
@@ -544,39 +549,35 @@ static void* aesd_char_thread(void* thread_param)
                         file_descriptor = open(LOG_FILE,O_RDWR|O_CREAT|O_APPEND,S_IRWXU|S_IRWXG|S_IRWXO);
                         if(file_descriptor == -1)
                         {
-                            free(buf);
-			     close(thread_params->socket_file_descriptor);
-			     thread_params->thread_completed = true;
-			     return 0;
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
                         }
-                        
                         int bytes_written_until_newline = (num_bytes_to_read - temp_read_var);
-                        
-                        if(strncmp(&buf[start_ptr], commands[0].command, strlen(commands[0].command))==0)
+                        if(strncmp(&buf[start_ptr],commands[0].command,strlen(commands[0].command))==0)
                         {
-                        	struct aesd_seekto seekto;
-                        	sscanf(&buf[start_ptr], "AESDCHAR_IOCSEEKTO:%d,%d", &seekto.write_cmd, &seekto.write_cmd_offset);
-                        	printf("Write cmd %d, offset %d\n", seekto.write_cmd, seekto.write_cmd_offset);
-                        	if(ioctl(file_descriptor, AESDCHAR_IOCSEEKTO, &seekto))
-                        	{
-                        		syslog(LOG_ERR, "IOCTL: %s", strerror(errno));
-                        	}
+                            struct aesd_seekto seekto;
+                            sscanf(&buf[start_ptr],"AESDCHAR_IOCSEEKTO:%d,%d",&seekto.write_cmd,&seekto.write_cmd_offset);
+                            printf("Write cmd %d, offset %d\n",seekto.write_cmd,seekto.write_cmd_offset);
+                            ioctl(file_descriptor,AESDCHAR_IOCSEEKTO,&seekto);
                         }
                         else
                         {
-		                if(dump_content(file_descriptor,&buf[start_ptr],bytes_written_until_newline)==-1)
-		                {
-		                    close(file_descriptor);
-				    free(buf);
-				    close(thread_params->socket_file_descriptor);
-				    thread_params->thread_completed = true;
-				    return 0;
-		                }
-                        }                        
-                        
+                            if(dump_content(file_descriptor,&buf[start_ptr],bytes_written_until_newline)==-1)
+                            {
+				close(file_descriptor);
+				free(buf);
+				close(thread_params->socket_file_descriptor);
+				thread_params->thread_completed = true;
+				return 0;
+                            }                        
+                        }
+
+
                         if(echo_file_socket(file_descriptor,thread_params->socket_file_descriptor)==-1)
                         {
-                            	close(file_descriptor);
+				close(file_descriptor);
 				free(buf);
 				close(thread_params->socket_file_descriptor);
 				thread_params->thread_completed = true;
@@ -618,15 +619,14 @@ int main(int argc,char **argv)
     }
     int status=0,yes=1;
     struct addrinfo hints;
-    struct addrinfo *p = NULL;  // will point to the results
+    struct addrinfo *p = NULL;
     char s[INET6_ADDRSTRLEN];
     memset(s,0,sizeof(s));
     struct sockaddr_storage client_addr;
     socklen_t addr_size = sizeof(client_addr);
     memset(&hints, 0, sizeof(hints));
-    hints.ai_socktype = SOCK_STREAM; // TCP stream sockets
-    hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
-    
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
     status = getaddrinfo(NULL, "9000", &hints, &socket_state.host_addr_info);
     if(status != 0)
     {
@@ -695,9 +695,9 @@ int main(int argc,char **argv)
             close(STDIN_FILENO);
             close(STDOUT_FILENO);
             close(STDERR_FILENO);
-            open ("/dev/null", O_RDWR); /* stdin */
-            dup (0); /* stdout */
-            dup (0); /* stderror */
+            open ("/dev/null", O_RDWR);
+            dup (0);
+            dup (0);
         }
     }
     int backlog = 10;
@@ -707,7 +707,6 @@ int main(int argc,char **argv)
         perform_cleanup();
         return -1;
     }
-    
     if(setup_signal(SIGINT)== -1)
     {
         perform_cleanup();
@@ -735,7 +734,6 @@ int main(int argc,char **argv)
     
     head_t head;
     TAILQ_INIT(&head);
-    
     if(socket_state.signal_caught)
     {
         main_thread_state = Join_threads;
@@ -757,16 +755,19 @@ int main(int argc,char **argv)
                 {   
                     if(errno == EINTR)
                     {
-                        goto next_state;
+			main_thread_state = Join_threads;
+			break;
                     }
-                    goto next_state;
+                    main_thread_state = Join_threads;
+                    break;
                 }                    
                 inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof(s));
                 worker_thread_t *node = NULL;
                 node = malloc(sizeof(worker_thread_t));
                 if(!node)
                 {
-                    goto next_state;
+                    main_thread_state = Join_threads;
+                    break;
                 }
                 node->thread_completed = false;
                 node->curr_state = Receive_From_Socket;
@@ -786,15 +787,14 @@ int main(int argc,char **argv)
                 if(status !=0)
                 {
                     free(node);
-                    goto next_state;
+                    main_thread_state = Join_threads;
+                    break;
                 }   
                 TAILQ_INSERT_TAIL(&head, node, entries);
                 socket_state.connection_count++;
                 node = NULL;
-                goto next_state;
-                next_state:
-                    main_thread_state = Join_threads;
-                    break;
+                main_thread_state = Join_threads;
+                break;
             case Join_threads:
                 if(socket_state.connection_count>0)
                 {
