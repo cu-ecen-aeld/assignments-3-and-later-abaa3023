@@ -246,7 +246,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         	update_size = ((delimiter_idx-first_idx) +1);
         }
         
-        if(allocate_memory(&data, update_size)<0)
+        if(allocate_memory(data, update_size)<0)
         {
             retval = -ENOMEM;  
             kfree(buffer);
