@@ -155,7 +155,7 @@ static long aesd_adjust_file_offset(struct file *filp,unsigned int write_cmd, un
         return -EINVAL;
     }
     data = filp->private_data;
-    if (mutex_lock_interruptible(&data->lock))
+    if (mutex_lock_interruptible(&data->m))
     {
         return -ERESTARTSYS;
     }
@@ -170,7 +170,7 @@ static long aesd_adjust_file_offset(struct file *filp,unsigned int write_cmd, un
         filp->f_pos = offset;
         ret_val = 0;
     }
-    mutex_unlock(&data->lock);
+    mutex_unlock(&data->m);
     return ret_val;
 }
 
@@ -236,7 +236,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
     while(delimiter_idx != -1)
     {
-        delimiter_idx = delim_identifier(&buffer[first_idx], (count-first_idx))
+        delimiter_idx = delim_identifier(&buffer[first_idx], (count-first_idx));
         if(delimiter_idx==-1)
         {
         	update_size = (count - first_idx);
@@ -286,19 +286,19 @@ loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
         goto ret_func;
     }
     data = filp->private_data;
-    if (mutex_lock_interruptible(&data->lock))
+    if (mutex_lock_interruptible(&data->m))
     {
         ret_val = -EINTR;      
         //Add a goto statement to the end
         goto ret_func;
     }
-    ret_val = fixed_size_llseek(filp,off,whence, data->circular_buffer.buff_size);
-    PDEBUG("Lseek Retval %lld offset %lld size %ld",ret_val,off,data->circular_buffer.buff_size);
+    ret_val = fixed_size_llseek(filp,off,whence, data->circular_buffer.size);
+    PDEBUG("Lseek Retval %lld offset %lld size %ld",ret_val,off,data->circular_buffer.size);
     if(ret_val == -EINVAL)
     {
         PDEBUG("Invalid offset!!");
     }
-    mutex_unlock(&data->lock);
+    mutex_unlock(&data->m);
     ret_func: return ret_val;
 }
 
