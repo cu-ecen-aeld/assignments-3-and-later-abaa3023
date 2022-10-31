@@ -57,6 +57,37 @@ static int allocate_memory(struct working_buffer *ptr, int size)
     }
     return retval;
 }
+
+
+#ifdef __KERNEL__
+loff_t ret_offset(struct aesd_circular_buffer *buffer,unsigned int buf_no, unsigned int offset_within_buf)
+{
+    int i,offset = 0;
+    printk("aesdchar: Searching for return offset");
+    if(buf_no>(AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)-1)
+    {
+        printk("aesdchar: Invalid buffer number");
+        return -1;
+    }
+    if(offset_within_buf > (buffer->entry[buf_no].size - 1))
+    {
+        printk("aesdchar: Invalid offset");
+        return -1;
+    }
+    for(i=0;i<(buf_no);i++)
+    {
+        printk("aesdchar: i %d ",i);
+        if(buffer->entry[i].size == 0)
+        {
+            return -1;
+        }
+        offset += buffer->entry[i].size;
+    }
+    return (offset + offset_within_buf);
+}
+#endif
+
+
 static long aesd_adjust_file_offset(struct file *filp,unsigned int write_cmd, unsigned int write_cmd_offset)
 {
     struct aesd_dev *data;
@@ -241,7 +272,7 @@ loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
     if (mutex_lock_interruptible(&data->lock))
     {
         ret_val = -EINTR;      
-        return ret_val
+        return ret_val;
     }
     ret_val = fixed_size_llseek(filp,off,whence, data->circular_buffer.size);
     mutex_unlock(&data->lock);
@@ -327,6 +358,39 @@ int aesd_init_module(void)
 
 }
 
+
+void destroy_circular_buffer(struct aesd_circular_buffer *buffer)
+{
+    uint8_t ptr;
+    char *entry;
+    if(!buffer)
+    {
+        return;
+    }
+    if(buffer->in_offs == buffer->out_offs && !buffer->full)
+    {
+        return;
+    }
+    ptr =  buffer->out_offs;
+    entry = (char *)buffer->entry[ptr].buffptr;
+    while(entry)
+    {
+        #ifdef __KERNEL__
+        kfree(entry);
+        #else
+        free(entry);
+        #endif
+        ptr = ((ptr + 1)%AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED);
+        if(ptr == buffer->in_offs)
+        {
+            break;
+        }
+        entry = (char *)buffer->entry[ptr].buffptr;
+    }
+
+}
+
+
 void aesd_cleanup_module(void)
 {
     dev_t devno = MKDEV(aesd_major, aesd_minor);
@@ -336,7 +400,10 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
-    mutex_lock_interruptible(&aesd_device.lock);
+    if(mutex_lock_interruptible(&aesd_device.lock))
+    {
+        PDEBUG("MUTEX UNLOCK FAILED");
+    }
     destroy_circular_buffer(&aesd_device.circular_buffer);
     mutex_unlock(&aesd_device.lock);
     mutex_destroy(&aesd_device.lock);
