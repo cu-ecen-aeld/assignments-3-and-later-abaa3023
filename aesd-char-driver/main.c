@@ -219,7 +219,6 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 kfree(free_buffer);
             }
             data->working_buffer.size = 0;
-            PDEBUG("Size of buffer after write %ld",data->circular_buffer.buff_size);
             start_ptr += delim_loc+1;
         }
         retval += mem_to_malloc;
@@ -244,12 +243,7 @@ loff_t aesd_llseek(struct file *filp, loff_t off, int whence)
         ret_val = -EINTR;      
         return ret_val
     }
-    ret_val = fixed_size_llseek(filp,off,whence, data->circular_buffer.buff_size);
-    PDEBUG("Lseek Retval %lld offset %lld size %ld",ret_val,off,data->circular_buffer.buff_size);
-    if(ret_val == -EINVAL)
-    {
-        PDEBUG("Invalid offset!!");
-    }
+    ret_val = fixed_size_llseek(filp,off,whence, data->circular_buffer.size);
     mutex_unlock(&data->lock);
     return ret_val;
 }
@@ -342,10 +336,7 @@ void aesd_cleanup_module(void)
     /**
      * TODO: cleanup AESD specific poritions here as necessary
      */
-    if(mutex_lock_interruptible(&aesd_device.lock))
-    {
-        PDEBUG("MUTEX UNLOCK FAILED");
-    }
+    mutex_lock_interruptible(&aesd_device.lock);
     destroy_circular_buffer(&aesd_device.circular_buffer);
     mutex_unlock(&aesd_device.lock);
     mutex_destroy(&aesd_device.lock);

@@ -61,9 +61,6 @@ void destroy_circular_buffer(struct aesd_circular_buffer *buffer);
 
 extern void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer);
 
-#ifdef __KERNEL__
-loff_t ret_offset(struct aesd_circular_buffer *buffer,unsigned int buf_no, unsigned int offset_within_buf);
-#endif
 
 /**
  * Create a for loop to iterate over each member of the circular buffer.
