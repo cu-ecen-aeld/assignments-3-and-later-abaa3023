@@ -197,6 +197,11 @@ static void alarmhandler()
 }
 #endif
 
+static void sighandler()
+{
+    socket_state.signal_caught = true;
+}
+
 static int setup_signal(int signo)
 {
     struct sigaction action;
@@ -263,10 +268,6 @@ static void shutdown_function()
     unlink("/var/tmp/aesdsocketdata");
     #endif
     exit(1);
-}
-static void sighandler()
-{
-    socket_state.signal_caught = true;
 }
 
 static void *get_in_addr(struct sockaddr *sa)
