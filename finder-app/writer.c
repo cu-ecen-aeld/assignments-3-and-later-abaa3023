@@ -1,79 +1,117 @@
 /*
- * Author: Abijith Ananda Krishnan
- *
- * Accepts the following arguments: 
- * the first argument is a full path to a file (including filename) on the  
- * filesystem, referred to below as writefile; 
- * the second argument is a text string which will be written within this 
- * file, referred to below as writestr
-
- * Exits with value 1 error and print statements if any of the arguments 
- above were not specified
- 
- * Creates a new file with name and path writefile with content writestr, 
- overwriting any existing file and creating the path if it doesn’t exist. 
- * Exits with value 1 and error print statement if the file could not be 
- created.
- *
- */
-
-
-// Header files
+*   HEADER FILES
+*/
 #include <stdio.h>
 #include <syslog.h>
-#include <time.h>
 #include <string.h>
-#include <errno.h>
-#include <stdlib.h> 
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
+#include <stdlib.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
 
+/*
+*   FUNCTION DEFINITIONs
+*/
 
-
-// Entry point of application
-int main(int argc, char* argv[])
+/*
+*  Logs a usage message in case the user invoked the function with the wrong number of arguments
+*  args:
+*       none
+*  return:
+        none
+*/
+static void usage()
 {
-	// Logging timestamp
-	char cur_time[128];
-	time_t t;
-	struct tm* ptm;
-	t = time(NULL);
-	ptm = localtime(&t);
-	strftime(cur_time, 128, "%d-%b-%Y %H:%M:%S", ptm);
-	syslog(LOG_USER, "Abijith logged in at %s UTC\n", cur_time);
-	openlog(NULL,0,LOG_USER);
-	
-	// Number of arguments check
-	// exits program if number of arguments not equal to 3
-	if(argc!=3)
-	{
-		syslog(LOG_ERR,"errno: %d\nKindly enter 2 arguments.\nFirst argument is file directory.\nSecond argument is text string to be searched within the respective files in the mentioned file directory\n",errno);
-		exit(1);
-	}
-	
-	char *writefile = argv[1];
-	char *writestr = argv[2];
-	int writestrlen = strlen(argv[2]);
-	int fd;
-	fd=open(writefile, O_WRONLY | O_TRUNC | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
-	if(fd == -1)
-	{
-		syslog(LOG_ERR, "Error %d while opening file", errno);
-		exit(1);
-	}
-	else
-		syslog(LOG_DEBUG, "Open successful");
-	
-	ssize_t nr;
-	nr = write(fd, writestr, writestrlen);
-	if(nr == -1)
-	{
-		syslog(LOG_ERR, "Error %d while writing to file", errno);
-		exit(1);
-	}
-	else
-		syslog(LOG_DEBUG, "Write successful");
+    syslog(LOG_ERR,"Usage: ./writer <absolute filepath including filename> <string to write>");
 }
 
+/*
+*  Opens the file present in the argument passed
+*  args:
+*       file_path - the path of the file that needs to be opened
+*  return:
+        file descriptor of the opened file
+*/
+static int open_file(char* file_path)
+{
+    //Execute permissions will not be given for OTHERs because umask = 0002
+    int fd = open(file_path,O_WRONLY|O_CREAT|O_TRUNC,S_IRWXU|S_IRWXG|S_IRWXO);
+    if(fd == -1)
+    {
+        syslog(LOG_ERR,"Error: %s",strerror(errno));
+        exit(1);
+    }
+    return fd;
+}
+
+/*
+*  Writes string to a file
+*  args:
+*       fd - file descriptor of the file
+*       string - string that needs to be written
+*  return:
+        none
+*/
+static void write_string(int fd, char *string)
+{
+    int write_len = strlen(string);
+    ssize_t ret;
+    
+    while(write_len!=0)
+    {
+        ret = write(fd,string,write_len);
+        if(ret == 0)
+        {
+            break;
+        } 
+        if(ret == -1)
+        {
+            if(errno == EINTR)
+            {
+                continue;
+            }
+            syslog(LOG_ERR,"Error: %s",strerror(errno));
+            exit(1);
+        }
+        write_len -= ret;
+        string += ret;
+    }
+}
+
+/*
+*  Closes a file
+*  args:
+*       fd - file descriptor of the file
+*  return:
+        none
+*/
+static void close_file(int fd)
+{
+    if(close(fd) == -1)
+    {
+        syslog(LOG_ERR,"Error: %s",strerror(errno));
+    }
+}
+
+/*
+*  Application entry point. Calls the appropriate functions needed for the application to work
+*  args:
+*       command line args
+*  return:
+        none
+*/
+int main( int argc, char *argv[] )
+{
+    openlog(NULL,0,LOG_USER);
+    if(argc<3)
+    {
+        usage();
+        exit(1);
+    }
+    int fd = open_file(argv[1]);
+    syslog(LOG_DEBUG,"DEBUG: Writing %s to %s",argv[2],argv[1]);
+    write_string(fd,argv[2]);
+    close_file(fd);
+}

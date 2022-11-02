@@ -1,23 +1,17 @@
 /*
- * Author: Abijith
- *
- */
-
-// Header files
+*   HEADER FILES
+*/
 #include "systemcalls.h"
-#include "errno.h"
-#include "stdlib.h"
-#include "syslog.h"
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/wait.h>
+#include <stdio.h>
+#include <syslog.h>
+#include <string.h>
+#include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <dirent.h>
-
-
-
+#include <errno.h>
+#include <unistd.h>
+#include <sys/wait.h>
 /**
  * @param cmd the command to execute with system()
  * @return true if the command in @param cmd was executed
@@ -35,22 +29,39 @@ bool do_system(const char *cmd)
  *   or false() if it returned a failure
 */
     int ret = system(cmd);
-    // check if system command was executed properly or not
+    //if system call fails, return error.
     if(ret == -1)
     {
-    	syslog(LOG_ERR, "Child process could not be created or status cannot be retrieved. Return value = -1, errno = %d", errno);
-    	return false;
+        perror("System error");
+        return false;
     }
-    
-    // return 127 if a shell could not be executed in the child process
-    if(ret == 127)
+    //if command is NULL, if system returns non-zero then shell is available, 0 means shell is not available
+    if(cmd == NULL)
     {
-    	syslog(LOG_ERR, "Shell could not be executed in the child process then return value is as though the child shell terminated by calling exit(1), errno = %d", errno);
-    	return false;
+        if(!ret)
+        {
+            printf("No Shell Available");
+            return false;
+        }
+        else
+        {
+            printf("Shell Available");
+            return true;
+        }
     }
-    
-    syslog(LOG_DEBUG, "system command successfully executed");	
-    return true;
+    // if cmd returns non zero value then return false, else true
+    else
+    {
+        if(ret > 0)
+        {
+            return false;
+        }   
+        else
+        {
+            return true;    
+        }
+    } 
+
 }
 
 /**
@@ -72,48 +83,16 @@ bool do_exec(int count, ...)
     va_list args;
     va_start(args, count);
     char * command[count+1];
-    char * rest_of_args[count];
     int i;
+    //copy variable number of args passed to the command vector
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
     }
-    
-    // checks if directory exists or not
-    DIR* dir = opendir(command[0]);
-    if(dir)
-    {
-    	closedir(dir);
-    }
-    else if(errno == ENOENT)
-    {
-    	return false;
-    }
-    
-    // add situation if number of arguments is 3
-    if(count == 3)
-    {
-    	DIR* dir1 = opendir(command[2]);
-    	if(dir1)
-    	{
-    		closedir(dir1);
-    	}
-    	else if(errno == ENOENT)
-    	{
-    		return false;
-    	}
-    }
-    // assign full path variable
-    char *full_path = command[0];
     command[count] = NULL;
     // this line is to avoid a compile warning before your implementation is complete
     // and may be removed
-    command[count] = command[count];
-    
-    for(i=0; i<(count+1); i++)
-    {
-        rest_of_args[i]=command[i+1];
-    }
+    //command[count] = command[count];
 
 /*
  * TODO:
@@ -124,27 +103,60 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
-    
     int status;
     pid_t pid;
-    pid=fork();
-    if(pid==-1)
-    	return false;
-    else if(pid == 0)
+    pid = fork ();
+    //handle if fork failed
+    if (pid == -1)
     {
-    	if((execv(full_path, rest_of_args))!=-1)
-    		return true;
-    	else
-    		return false;
+        perror("Fork");
+        va_end(args);
+        return false;
     }
-    
-    if(waitpid(pid,&status,0)==-1)
-    	return false;
-    else if(WIFEXITED(status))
-    	return true;	
-    va_end(args);
+    //if child process
+    else if (pid == 0) 
+    {
+        if(execv (command[0], (command)) == -1)
+        {
+            //if exec returns, that means it failed
+            perror("Exec");
+            va_end(args);
+            exit(-1);    
+        }
 
-    return true;
+    }
+    //if parent process
+    else
+    {
+        if (waitpid (pid, &status, 0) == -1)
+        {
+            //if there's an issue with the invocation of the the waitpid function
+            perror("Wait");
+            va_end(args);
+            return false;
+        }
+        //if the child process returned normally (did not exit by unnatural means like a signal)
+        else if (WIFEXITED (status))
+        {
+            //check exit status of the child
+            int ret_status = WEXITSTATUS(status);
+            if(ret_status!=0)
+            {
+                printf("Command exited with non-zero status\n");
+                va_end(args);
+                return false;
+            }
+            //only if the child exited normally with a status of 0, return true
+            else
+            {
+                va_end(args);
+                return true;
+            }
+        }
+        va_end(args);
+        return false;
+    }
+    return false;
 }
 
 /**
@@ -156,41 +168,15 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
 {
     va_list args;
     va_start(args, count);
+    int status;
     char * command[count+1];
     int i;
+    //copy the variable number of args passed to the command vector
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
     }
-    // check if directory exists
-    DIR* dir = opendir(command[0]);
-    if(dir)
-    {
-    	closedir(dir);
-    }
-    else if(errno == ENOENT)
-    {
-    	return false;
-    }
-    // add condition for number of arguments as 3
-    if(count == 3)
-    {
-    	DIR* dir1 = opendir(command[2]);
-    	if(dir1)
-    	{
-    		closedir(dir1);
-    	}
-    	else if(errno == ENOENT)
-    	{
-    		return false;
-    	}
-    }
-    // full path is assigned as variable
-    char *full_path = command[0];
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
 
 /*
@@ -200,38 +186,77 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-
-    int status;
-    pid_t pid;
+    //open the file to redirect STDOUT to
     int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
-    if (fd < 0)
+    if(fd<0)
     {
-    	syslog(LOG_ERR, "Error while opening file");
-    	return false;
+        //if open failed
+        perror("Open");
+        return false;
     }
-    pid=fork();
-    if(pid==-1)
-    	return false;
+
+    
+    pid_t pid;
+    pid = fork ();
+    if (pid == -1)
+    {
+        //if fork failed
+        perror("Fork");
+        va_end(args);
+        return false;
+    }
+    //if child process
     else if(pid == 0)
     {
-    	if (dup2(fd, 1) < 0) 
-    	{
-    		syslog(LOG_ERR, "Error while executing dup2");
-    		return false;
-    	}
-    	close(fd);
-    	if((execv(full_path, command))!=-1)
-    		return true;
-    	else
-    		return false;
+        //fd and 1 (which is STDOUT) both point to the same thing now i.e, STDOUT points to fd
+        if (dup2(fd, 1) < 0)
+        {
+            //if dup failed. 
+            perror("dup2"); 
+            return false; 
+        }
+        close(fd);
+        //exec the command
+        if(execv (command[0], (command))== -1)
+        {            
+            //if exec returned
+            perror("Exec");
+            va_end(args);
+            exit(-1);
+        }
     }
-    
-    if(waitpid(pid,&status,0)==-1)
-    	return false;
-    else if(WIFEXITED(status))
-    	return true;	
-    va_end(args);
-
-    return true;
+    //if parent process
+    else
+    {
+        close(fd);
+        //wait for the child
+        if (waitpid (pid, &status, 0) == -1)
+        {
+            perror("Wait");
+            va_end(args);
+            return false;
+        }
+        //if child exited normally
+        else if (WIFEXITED (status))
+        {
+            int ret_status = WEXITSTATUS(status);
+            //check exit status of child
+            if(ret_status!=0)
+            {
+                printf("Command exited with non-zero status %d\n",ret_status);
+                va_end(args);
+                return false;
+            }
+            //if child returned normally and exit status = 0, then return true
+            else
+            {
+                va_end(args);
+                return true;
+            }
+        }        
+        //if child did not return normally return false
+        va_end(args);
+        return false;
+    }
+    return false;
 }
-
